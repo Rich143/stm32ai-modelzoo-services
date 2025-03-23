@@ -1,13 +1,13 @@
 general:
   project_name: human_activity_recognition
-  model_path:  #../pretrained_models/ign/ST_pretrainedmodel_custom_dataset/mobility_v1/ign_wl_24/ign_wl_24.h5
+  model_path:  ../../../stm32ai-modelzoo/human_activity_recognition/gmp/ST_pretrainedmodel_public_dataset/WISDM/gmp_wl_48/gmp_wl_48.h5
   logs_dir: logs
   saved_models_dir: saved_models
   display_figures: True
   global_seed: 123
   gpu_memory_limit: 4
 
-operation_mode: chain_tb
+operation_mode: benchmarking
 #choices=['benchmarking', 'deployment', 'evaluation', 'training', 'chain_tb']
 
 dataset:
@@ -64,8 +64,10 @@ tools:
       version: 10.0.0
       optimization: balanced
       on_cloud: True
-      path_to_stedgeai: C:/Users/<XXXXX>/STM32Cube/Repository/Packs/STMicroelectronics/X-CUBE-AI/<*.*.*>/Utilities/windows/stedgeai.exe
-   path_to_cubeIDE: C:/ST/STM32CubeIDE_1.17.0/STM32CubeIDE/stm32cubeide.exe
+      #path_to_stedgeai: C:/Users/<XXXXX>/STM32Cube/Repository/Packs/STMicroelectronics/X-CUBE-AI/<*.*.*>/Utilities/windows/stedgeai.exe
+      #path_to_stedgeai: /Applications/STMicroelectronics/STM32CubeMX.app/Contents/MacOs/STM32CubeMX/
+      path_to_stedgeai: ~/STM32Cube/Repository/Packs/STMicroelectronics/X-CUBE-AI/10.0.0
+   path_to_cubeIDE: /Applications/STM32CubeIDE.app/Contents/MacOS/STM32CubeIDE
 
 benchmarking:
   board: B-U585I-IOT02A
