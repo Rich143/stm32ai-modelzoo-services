@@ -55,7 +55,7 @@ tools:
       on_cloud: True
       #path_to_stedgeai: C:/Users/<XXXXX>/STM32Cube/Repository/Packs/STMicroelectronics/X-CUBE-AI/<*.*.*>/Utilities/windows/stedgeai.exe
       #path_to_stedgeai: /Applications/STMicroelectronics/STM32CubeMX.app/Contents/MacOs/STM32CubeMX/
-      path_to_stedgeai: ~/STM32Cube/Repository/Packs/STMicroelectronics/X-CUBE-AI/10.0.0
+      path_to_stedgeai: ~/STM32Cube/Repository/Packs/STMicroelectronics/X-CUBE-AI/8.1.0
    path_to_cubeIDE: /Applications/STM32CubeIDE.app/Contents/MacOS/STM32CubeIDE
 
 benchmarking:
