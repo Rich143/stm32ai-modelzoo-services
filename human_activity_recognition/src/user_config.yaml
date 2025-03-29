@@ -1,13 +1,14 @@
 general:
   project_name: human_activity_recognition
-  model_path:  ../../../stm32ai-modelzoo/human_activity_recognition/gmp/ST_pretrainedmodel_public_dataset/WISDM/gmp_wl_48/gmp_wl_48.h5
+  #model_path:  ../../../stm32ai-modelzoo/human_activity_recognition/gmp/ST_pretrainedmodel_public_dataset/WISDM/gmp_wl_48/gmp_wl_48.h5
   logs_dir: logs
   saved_models_dir: saved_models
   display_figures: True
   global_seed: 123
-  gpu_memory_limit: 4
+  gpu_memory_limit: 24
+  deterministic_ops: True
 
-operation_mode: benchmarking
+operation_mode: training
 #choices=['benchmarking', 'deployment', 'evaluation', 'training', 'chain_tb']
 
 dataset:
@@ -25,39 +26,27 @@ preprocessing:
   normalization: False
 
 training:
-  model:    # Use it if you want to use a model from the zoo, mutually exclusive with 'general.model_path'
-    name: ign
+  model:
+    name: ign # available choices are [ign, gmp]
     input_shape: (24, 3, 1)
-    pretrained_model_path:         # Optional, available for transfer learning with cnn models
-  resume_training_from: # Optional, use to resume a training from a previous experiment.
-                        # Example: experiments_outputs/YYYY_MM_DD_HH_mm_ss/saved_models/last_augmented_model.h5 
-  # frozen_layers: (0:-1)            # Optional, use if you want to freeze some layers (by default all layers are trainable)
-  dropout: 0.5                     # Optional, only used for `ign` or `gmp` model use it if you want a dropout layer to be included in the model
-  batch_size: 256
-  epochs: 200
+  dropout: 0.2
+  batch_size: 32
+  epochs: 1000
   optimizer:
     Adam:
-      learning_rate: 0.001
-  callbacks:          # Optional section
+      learning_rate: 0.01
+  callbacks:
     ReduceLROnPlateau:
-      monitor: val_accuracy
-      mode: max
-      factor: 0.5
-      patience: 40
-      min_lr: 1.0e-05
-    # LRWarmupCosineDecay:
-    #   initial_lr: 0.0001
-    #   warmup_steps: 100
-    #   max_lr: 0.005
-    #   hold_steps: 100
-    #   decay_steps: 800
-    #   end_lr: 5.0e-05
+      monitor: val_loss
+      factor: 0.1
+      patience: 20
+      min_lr: 1.0e-04
     EarlyStopping:
       monitor: val_accuracy
-      mode: max
       restore_best_weights: true
-      patience: 60
-#  trained_model_path: trained.h5   # Optional, use it if you want to save the best model at the end of the training to a path of your choice
+      patience: 40
+
+##  trained_model_path: trained.h5   # Optional, use it if you want to save the best model at the end of the training to a path of your choice
 
 tools:
    stedgeai:

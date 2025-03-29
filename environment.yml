@@ -35,9 +35,12 @@ dependencies:
   - urllib3=1.26.13
   - xmlrunner=1.7.7
   - marshmallow=3.20.1
+  - clearml
   - pip
   - pip:
     - larq==0.13.3
     - tensorflow-macos==2.9.0
     - tensorflow-metal==0.5.1
-    # other pip packages from requirements.txt
+    # Test
+    - jedi
+    - pylint
