@@ -20,6 +20,8 @@ from tqdm import tqdm
 from tensorflow.keras.utils import to_categorical
 from preprocessing import gravity_rotation
 import statistics
+import os
+from glob import glob
 
 
 def read_pkl_dataset(pkl_file_path: str,
@@ -238,6 +240,236 @@ def preprocess_data(data: np.ndarray,
     return data
 
 
+def load_pamap2_from_file_and_segment(dataset_path: str,
+                                      max_segment_gap_ms: float = 0.1):
+    """
+    Load and combine PAMAP2 protocol dataset, keeping only timestamp, subject_id, activity_id,
+    and 16g accelerometer data. Filters out activity_id == 0 and segments the data into
+    time-continuous chunks per subject and activity.
+
+    Adds a time_diff_ms column (milliseconds between samples) and a globally unique segment_id.
+
+    Parameters:
+        protocol_folder (str): Path to the 'protocol' folder containing the .dat files.
+        max_gap_s (float): Max allowed gap (in seconds) to consider data as continuous.
+
+    Returns:
+        pd.DataFrame: Combined and segmented DataFrame with globally unique segment_id.
+    """
+    # Columns: 0 = timestamp, 1 = activity_id
+    # 4-6 = hand acc16 x/y/z, 21-23 = chest acc16 x/y/z, 38-40 = ankle acc16 x/y/z
+    usecols = [0, 1] + list(range(4, 7)) + list(range(21, 24)) + list(range(38, 41))
+    col_names = ['Arrival_Time', 'Activity_Label'] + \
+                [f'hand_acc16_{axis}' for axis in ['x', 'y', 'z']] + \
+                [f'chest_acc16_{axis}' for axis in ['x', 'y', 'z']] + \
+                [f'ankle_acc16_{axis}' for axis in ['x', 'y', 'z']]
+
+    all_dfs = []
+    file_pattern = os.path.join(protocol_folder, 'subject1*.dat')
+    segment_counter = 0  # global segment ID counter
+
+    for file_path in sorted(glob(file_pattern)):
+        subject_id = int(os.path.basename(file_path)[7:10])
+        df = pd.read_csv(file_path, sep=' ', header=None, usecols=usecols, names=col_names)
+        df['User'] = subject_id
+
+        # Sort and compute time differences
+        df = df.sort_values('Arrival_Time').reset_index(drop=True)
+        df['time_diff_ms'] = df['Arrival_Time'].diff().fillna(0) * 1000
+
+        # Segment using activity transitions (including to/from activity_id == 0)
+        activity_change = df['Activity_Label'] != df['Activity_Label'].shift()
+        time_gap = df['time_diff_ms'] > max_gap_s * 1000
+        discontinuity = activity_change | time_gap
+        df['local_segment_id'] = discontinuity.cumsum().astype(int)
+
+        # Only keep rows where activity_id != 0
+        df_valid = df[df['Activity_Label'] != 0].copy()
+        if df_valid.empty:
+            continue
+
+        # Assign global segment IDs only to valid segments
+        unique_local_segments = df_valid['local_segment_id'].unique()
+        segment_id_map = {local_id: segment_counter + i for i, local_id in enumerate(unique_local_segments)}
+        df_valid['segment_id'] = df_valid['local_segment_id'].map(segment_id_map)
+        segment_counter += len(unique_local_segments)
+
+        df_valid.drop(columns='local_segment_id', inplace=True)
+        all_dfs.append(df_valid)
+
+    df = pd.concat(all_dfs, ignore_index=True)
+
+    return df
+
+
+def copy_accel_to_xyz(df, source='chest'):
+    """
+    Copies the specified accelerometer data (hand, chest, or ankle) to generic 'x', 'y', 'z' columns.
+
+    Parameters:
+        df (pd.DataFrame): Input DataFrame from `load_pamap2_filtered_segmented`.
+        source (str): Which set of accelerometer data to copy. Options: 'hand', 'chest', 'ankle'.
+
+    Returns:
+        pd.DataFrame: Modified DataFrame with new 'x', 'y', 'z' columns copied from the source set.
+    """
+    valid_sources = ['hand', 'chest', 'ankle']
+    if source not in valid_sources:
+        raise ValueError(f"source must be one of {valid_sources}")
+
+    df = df.copy()
+    df['x'] = df[f'{source}_acc16_x']
+    df['y'] = df[f'{source}_acc16_y']
+    df['z'] = df[f'{source}_acc16_z']
+    return df
+
+def fill_nans(df):
+    # Interpolate to fill NaNs
+    df[["x", "y", "z"]] = (
+    df.groupby("segment_id")[["x", "y", "z"]]
+    .apply(lambda group: group.interpolate())
+    .reset_index(drop=True)
+    )
+    
+    # Fill any remaining NaNs with 0
+    df = df.fillna(0)
+    
+    return df
+
+def class_name_to_id(name):
+    """
+    Convert a PAMAP2 activity name (case-insensitive) to its corresponding activity ID.
+
+    Parameters:
+        name (str): Activity name (e.g., 'sitting', 'walking')
+
+    Returns:
+        int: Corresponding activity ID, or None if not found
+    """
+    activity_map = {
+        'lying': 1,
+        'sitting': 2,
+        'standing': 3,
+        'walking': 4,
+        'running': 5,
+        'cycling': 6,
+        'nordic walking': 7,
+        'watching tv': 9,
+        'computer work': 10,
+        'car driving': 11,
+        'ascending stairs': 12,
+        'descending stairs': 13,
+        'vacuum cleaning': 16,
+        'ironing': 17,
+        'folding laundry': 18,
+        'house cleaning': 19,
+        'playing soccer': 20,
+        'rope jumping': 24,
+        'other': 0
+    }
+
+    return activity_map.get(name.lower().strip())
+
+
+def load_pamap2(dataset_path: str,
+               class_names: List[str],
+               input_shape: Tuple,
+               gravity_rot_sup: bool,
+               normalization: bool,
+               val_split: float,
+               test_split: float,
+               seed: int,
+               batch_size: int,
+               to_cache: bool = False):
+    """
+    Loads the pamap2 dataset and return two TensorFlow datasets for training and validation.
+    """
+
+    dataset = load_pamap2_from_file_and_segment(dataset_path)
+
+    # Use the chest accelerometer data
+    dataset = copy_accel_to_xyz(dataset, source='chest')
+
+    # Remove the ankle and hand data
+    dataset = dataset.drop(['hand_acc16_x', 'hand_acc16_y', 'hand_acc16_z', 'ankle_acc16_x', 'ankle_acc16_y', 'ankle_acc16_z'], axis=1)
+
+    # Fill NaNs via linear interpolation
+    dataset = fill_nans(dataset)
+
+    # Keep only activities of interest
+    activities_of_interest = [class_name_to_id(activity) for activity in class_names]
+    df = df[df["Activity_Label"].isin(activities_of_interest)]
+
+    # clean_csv(dataset_path)
+
+    # # read all the data in csv 'WISDM_ar_v1.1_raw.txt' into a dataframe
+    # #  called dataset
+    # columns = ['User', 'Activity_Label', 'Arrival_Time',
+               # 'x', 'y', 'z']  # headers for the columns
+
+    # dataset = pd.read_csv(dataset_path, header=None,
+                          # names=columns, delimiter=',')
+
+    # # removing the ; at the end of each line and casting the last variable
+    # #  to datatype float from string
+    # dataset['z'] = [float(str(char).replace(";", "")) for char in dataset['z']]
+
+    # # remove the user column as we do not need it
+    # dataset = dataset.drop('User', axis=1)
+
+    # # as we are workign with numbers, let us replace all the empty columns
+    # # entries with NaN (not a number)
+    # dataset.replace(to_replace='null', value=np.NaN)
+
+    # # remove any data entry which contains NaN as a member
+    # dataset = dataset.dropna(axis=0, how='any')
+    if len(class_names) == 4:
+        dataset['Activity_Label'] = ['Stationary' if activity == 'Standing' or activity == 'Sitting' else activity
+                                     for activity in dataset['Activity_Label']]
+        dataset['Activity_Label'] = ['Stairs' if activity == 'Upstairs' or activity == 'Downstairs' else activity
+                                     for activity in dataset['Activity_Label']]
+
+    dataset = preprocess_data(dataset, gravity_rot_sup, normalization)
+
+    # removing the columns for time stamp and rearranging remaining columns
+    dataset = dataset[['x', 'y', 'z', 'Activity_Label']]
+    segments, labels = get_data_segments(dataset=dataset,
+                                         seq_len=input_shape[0])
+
+    labels = to_categorical([class_names.index(label)
+                            for label in labels], num_classes=len(class_names))
+
+    # split data into train and test
+    train_x, test_x, train_y, test_y = train_test_split(segments, labels,
+                                                        test_size=test_split,
+                                                        shuffle=True,
+                                                        random_state=seed)
+    # split data into train and valid
+    train_x, valid_x, train_y, valid_y = train_test_split(train_x, train_y,
+                                                          test_size=val_split,
+                                                          shuffle=True,
+                                                          random_state=seed)
+    train_ds = tf.data.Dataset.from_tensor_slices((train_x, train_y))
+    if batch_size is None:
+        batch_size=32
+    train_ds = train_ds.shuffle(train_x.shape[0],
+                                reshuffle_each_iteration=True,
+                                seed=seed).batch(batch_size)
+    valid_ds = tf.data.Dataset.from_tensor_slices((valid_x, valid_y))
+    valid_ds = valid_ds.shuffle(valid_x.shape[0],
+                                reshuffle_each_iteration=True,
+                                seed=seed).batch(batch_size)
+    test_ds = tf.data.Dataset.from_tensor_slices((test_x, test_y))
+    test_ds = test_ds.shuffle(test_x.shape[0],
+                              reshuffle_each_iteration=True,
+                              seed=seed).batch(batch_size)
+    if to_cache:
+        train_ds = train_ds.cache()
+        valid_ds = valid_ds.cache()
+        test_ds = test_ds.cache()
+    return train_ds, valid_ds, test_ds
+
+
 def load_wisdm(dataset_path: str,
                class_names: List[str],
                input_shape: Tuple,
@@ -265,8 +497,8 @@ def load_wisdm(dataset_path: str,
     #  to datatype float from string
     dataset['z'] = [float(str(char).replace(";", "")) for char in dataset['z']]
 
-    # remove the user column as we do not need it
-    dataset = dataset.drop('User', axis=1)
+    # # remove the user column as we do not need it
+    # dataset = dataset.drop('User', axis=1)
 
     # as we are workign with numbers, let us replace all the empty columns
     # entries with NaN (not a number)
@@ -280,12 +512,13 @@ def load_wisdm(dataset_path: str,
         dataset['Activity_Label'] = ['Stairs' if activity == 'Upstairs' or activity == 'Downstairs' else activity
                                      for activity in dataset['Activity_Label']]
 
+    dataset = preprocess_data(dataset, gravity_rot_sup, normalization)
+
     # removing the columns for time stamp and rearranging remaining columns
     dataset = dataset[['x', 'y', 'z', 'Activity_Label']]
     segments, labels = get_data_segments(dataset=dataset,
                                          seq_len=input_shape[0])
 
-    segments = preprocess_data(segments, gravity_rot_sup, normalization)
     labels = to_categorical([class_names.index(label)
                             for label in labels], num_classes=len(class_names))
 

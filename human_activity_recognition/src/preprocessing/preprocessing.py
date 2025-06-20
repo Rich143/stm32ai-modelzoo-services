@@ -91,7 +91,15 @@ def lowpass_filter(data):
 def decompose_dyn(data, A_COEFF=A_COEFF, B_COEFF=B_COEFF):
     """ separate acceleration in low-varying and dynamic component """
     data_g, mean_group_delay = lowpass_filter(data)
+
+    if data_g.shape[0] <= mean_group_delay:
+        # Data too short to decompose
+        print("[INFO] : Decomposing data - Data too short to decompose. Shape {}, group delay {}".format(data_g.shape, mean_group_delay))
+        return np.empty((0,)), np.empty((0,))
+
     data_g_delayed = delay_signal(data_g, mean_group_delay)
+
+    print("[INFO] : Decomposing data - data_g_delayed shape {}, data shape {}".format(data_g_delayed.shape, data.shape))
 
     data_dyn = data - data_g_delayed
 
@@ -99,7 +107,7 @@ def decompose_dyn(data, A_COEFF=A_COEFF, B_COEFF=B_COEFF):
     data_dyn = data_dyn[valid_start:]
     data_g = data_g[valid_start:]
 
-    print("[INFO] : Decomposing data - dropped {} samples, new len {}".format(valid_start, len(data_dyn)))
+    print("[INFO] : Decomposing data - dropped {} samples, new len {}".format(valid_start, data_dyn.shape[0]))
 
     return data_g, data_dyn
 
@@ -114,6 +122,10 @@ def gravity_rotation(data, A_COEFF=A_COEFF, B_COEFF=B_COEFF):
     # Rotate the coordinate system in order to have z pointing in the gravity direction
     #
     data_g, data_dyn = decompose_dyn(data, A_COEFF, B_COEFF)
+
+    if data_g.shape[0] == 0:
+        # Data was too short to decompose
+        return np.empty((0,))
 
     # Normalize gravity
     data_g = data_g / np.sqrt(colwise_dot(data_g, data_g))[:, np.newaxis]
