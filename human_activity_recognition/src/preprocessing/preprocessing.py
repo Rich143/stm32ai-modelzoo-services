@@ -13,16 +13,6 @@ import scipy.signal as signal
 np.random.seed(611)
 
 
-# Hi-pass IIR filter to separate the low-varying signal
-# 26 Hz
-A_COEFF = [1.0, -3.868656635, 5.614526749, -3.622760773, 0.8768966198]
-B_COEFF = [0.9364275932, -3.745710373, 5.618565559, -3.745710373, 0.9364275932]
-#
-# 20 Hz
-# A_COEFF = [1.0, -3.83582554, 5.52081914, -3.53353522, 0.848556]
-# B_COEFF = [0.92117099, -3.68468397, 5.52702596, -3.68468397, 0.92117099]
-#
-
 def delay_signal(data, delay_samples):
     """
     Delay a signal by an integer number of samples (no interpolation).
@@ -59,13 +49,10 @@ def get_filter_zi(data, filt_sos):
 
     return zi_states
 
-def lowpass_filter(data):
+def lowpass_filter(data, fs=100):
     """Filter signal on all axis with an low-pass filter."""
 
-    print("[INFO] : Low-pass filtering data - Len {}, Shape {}".format(len(data), data.shape))
-
-    # Sampling frequency
-    fs = 26.0  # Hz
+    # print("[INFO] : Low-pass filtering data - Len {}, Shape {}".format(len(data), data.shape))
 
     # Filter specifications
     wp = 0.2 # Passband edge
@@ -82,15 +69,16 @@ def lowpass_filter(data):
     for axis in range(3):
         data_filtered[:, axis], zf = signal.sosfilt(lowpass_iir_sos, data[:, axis], zi=zi_states[axis])
 
-    # Hardcoded group delay in passband (where passband is to -20dB)
-    mean_group_delay = 68
-
-    return data_filtered, mean_group_delay
+    return data_filtered
 
 
-def decompose_dyn(data, A_COEFF=A_COEFF, B_COEFF=B_COEFF):
-    """ separate acceleration in low-varying and dynamic component """
-    data_g, mean_group_delay = lowpass_filter(data)
+def decompose_dyn(data, fs=100, mean_group_delay=270):
+    """
+    separate acceleration into low-varying and dynamic component
+    Group delay in passband (where passband is to -20dB)
+    """
+
+    data_g = lowpass_filter(data, fs=fs)
 
     if data_g.shape[0] <= mean_group_delay:
         # Data too short to decompose
@@ -99,7 +87,7 @@ def decompose_dyn(data, A_COEFF=A_COEFF, B_COEFF=B_COEFF):
 
     data_g_delayed = delay_signal(data_g, mean_group_delay)
 
-    print("[INFO] : Decomposing data - data_g_delayed shape {}, data shape {}".format(data_g_delayed.shape, data.shape))
+    # print("[INFO] : Decomposing data - data_g_delayed shape {}, data shape {}".format(data_g_delayed.shape, data.shape))
 
     data_dyn = data - data_g_delayed
 
@@ -107,7 +95,7 @@ def decompose_dyn(data, A_COEFF=A_COEFF, B_COEFF=B_COEFF):
     data_dyn = data_dyn[valid_start:]
     data_g = data_g[valid_start:]
 
-    print("[INFO] : Decomposing data - dropped {} samples, new len {}".format(valid_start, data_dyn.shape[0]))
+    # print("[INFO] : Decomposing data - dropped {} samples, new len {}".format(valid_start, data_dyn.shape[0]))
 
     return data_g, data_dyn
 
@@ -117,11 +105,11 @@ def colwise_dot(lhs, rhs):
     return np.sum(lhs * rhs, axis=1)
 
 
-def gravity_rotation(data, A_COEFF=A_COEFF, B_COEFF=B_COEFF):
+def gravity_rotation(data, fs=100, mean_group_delay=270):
 
     # Rotate the coordinate system in order to have z pointing in the gravity direction
     #
-    data_g, data_dyn = decompose_dyn(data, A_COEFF, B_COEFF)
+    data_g, data_dyn = decompose_dyn(data, fs=fs, mean_group_delay=mean_group_delay)
 
     if data_g.shape[0] == 0:
         # Data was too short to decompose

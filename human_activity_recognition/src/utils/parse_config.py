@@ -19,6 +19,8 @@ from munch import DefaultMunch
 import tensorflow as tf
 from typing import Dict, List
 
+def lowercase_list(list):
+    return [x.lower() for x in list]
 
 def parse_dataset_section(cfg: DictConfig, mode: str = None, mode_groups: DictConfig = None) -> None:
     '''
@@ -58,10 +60,16 @@ def parse_dataset_section(cfg: DictConfig, mode: str = None, mode_groups: DictCo
             if not(cfg.class_names == ["Jogging", "Stationary", "Stairs", "Walking"]):
                 raise ValueError(f"\nThe value of `class_names` for `wisdm` should be {['Jogging', 'Stationary', 'Stairs', 'Walking']}\n"
                                 "Please check the 'dataset.class_names' section of your configuration file.")
-        elif cfg.name.lower() == "mobility_v1":    
+        elif cfg.name.lower() == "mobility_v1":
             if not(cfg.class_names == ["Stationary", "Walking", "Jogging", "Biking"]):
                 raise ValueError(f"\nThe value of `class_names` for `mobility_v1` should be {['Stationary', 'Walking', 'Jogging', 'Biking']}\n"
                                 "Please check the 'dataset.class_names' section of your configuration file.")
+        elif cfg.name.lower() == "pamap2":
+            if not(lowercase_list(cfg.class_names) == ["stationary", "walking", "running", "cycling"]):
+                raise ValueError(f"\nThe value of `class_names` for `pamap2` should be {['Stationary', 'Walking', 'Running', 'Cycling']}\n"
+                                "Please check the 'dataset.class_names' section of your configuration file.")
+        else:
+                raise ValueError("The dataset name is not valid")
     # # Sort the class names if they were provided
     # if cfg.class_names:
     #     cfg.class_names = sorted(cfg.class_names)
@@ -94,7 +102,7 @@ def parse_dataset_section(cfg: DictConfig, mode: str = None, mode_groups: DictCo
     # Check that the dataset root directories exist
     for path, name in dataset_paths:
         message = f"\nPlease check the 'dataset.{name}_path' attribute in your configuration file."
-        if path and not os.path.isfile(path):
+        if path and not (os.path.isfile(path) or os.path.isdir(path)):
             raise FileNotFoundError(f"\nUnable to find the root directory of the {name} set\n"
                                     f"Received path: {path}{message}")
 
@@ -120,6 +128,10 @@ def check_dataset_contents(cfg: DictConfig) -> None:
         if not cfg.training_path and os.path.isfile(cfg.training_path):
             raise ValueError("training_path is not provided.\n"
                              "Please check the cfg.dataset section")
+    if cfg.name.lower() == 'pamap2':
+        if not cfg.training_path and os.path.isdir(cfg.training_path):
+            raise ValueError("training_path is not provided.\n"
+                             "Please check the cfg.dataset section")
     if cfg.name.lower() == 'mobility_v1':
         if not (cfg.training_path and cfg.test_path and
                os.path.isfile(cfg.training_path) and os.path.isfile(cfg.test_path)):
@@ -137,8 +149,12 @@ def get_class_names(dataset_name: str) -> List:
     # Look for a dataset that can be used to find the class names
     if dataset_name.lower() == 'wisdm':
         return ["Jogging", "Stationary", "Stairs", "Walking"]
-    else:
+    elif dataset_name.lower() == 'mobility_v1':
         return ["Stationary", "Walking", "Jogging", "Biking"]
+    elif dataset_name.lower() == 'pamap2':
+        return lowercase_list(["Stationary", "Walking", "Running", "Cycling"])
+    else:
+        raise ValueError("The dataset name is not valid")
 
 def get_config(config_data: DictConfig) -> DefaultMunch:
     """
@@ -170,7 +186,7 @@ def get_config(config_data: DictConfig) -> DefaultMunch:
     mode_choices = ["training", "evaluation", "deployment", "benchmarking", "chain_tb"]
     legal = ["general", "operation_mode", "dataset", "preprocessing", "training",
              "prediction", "tools", "benchmarking", "deployment", "mlflow"]
-    parse_top_level(cfg, 
+    parse_top_level(cfg,
                     mode_groups=mode_groups,
                     mode_choices=mode_choices,
                     legal=legal)
@@ -182,8 +198,8 @@ def get_config(config_data: DictConfig) -> DefaultMunch:
     legal = ["project_name", "model_path", "logs_dir", "saved_models_dir", "deterministic_ops",
             "display_figures", "global_seed", "gpu_memory_limit", "num_threads_tflite"]
     required = []
-    parse_general_section(cfg.general, 
-                          mode=cfg.operation_mode, 
+    parse_general_section(cfg.general,
+                          mode=cfg.operation_mode,
                           mode_groups=mode_groups,
                           legal=legal,
                           required=required,
@@ -196,10 +212,10 @@ def get_config(config_data: DictConfig) -> DefaultMunch:
     # Dataset section parsing
     if not cfg.dataset:
         cfg.dataset = DefaultMunch.fromDict({})
-    parse_dataset_section(cfg.dataset, 
-                          mode=cfg.operation_mode, 
+    parse_dataset_section(cfg.dataset,
+                          mode=cfg.operation_mode,
                           mode_groups=mode_groups)
-    
+
     # Preprocessing section parsing
     if not cfg.operation_mode in mode_groups.benchmarking:
         parse_preprocessing_section(cfg.preprocessing)
@@ -210,14 +226,14 @@ def get_config(config_data: DictConfig) -> DefaultMunch:
         model_type_used = bool(cfg.general.model_type)
         legal = ["model", "batch_size", "epochs", "optimizer", "dropout", "frozen_layers",
                  "callbacks", "resume_training_from", "trained_model_path"]
-        parse_training_section(cfg.training, 
-                               model_path_used=model_path_used, 
+        parse_training_section(cfg.training,
+                               model_path_used=model_path_used,
                                model_type_used=model_type_used,
                                legal=legal)
 
     # Tools section parsing
     if cfg.operation_mode in (mode_groups.benchmarking + mode_groups.deployment):
-        parse_tools_section(cfg.tools, 
+        parse_tools_section(cfg.tools,
                             cfg.operation_mode,
                             cfg.hardware_type)
 
@@ -245,11 +261,11 @@ def get_config(config_data: DictConfig) -> DefaultMunch:
     cds = cfg.dataset
     if cfg.operation_mode in ['benchmarking', 'deployment']:
         pass
-    elif(cds.name.lower() in ['wisdm', 'mobility_v1']):
+    elif(cds.name.lower() in ['wisdm', 'mobility_v1', 'pamap2']):
         check_dataset_contents(cds)
         cds.class_names = get_class_names(cds.name)
     else:
-        raise ValueError("\nOnly \'wisdm\' and \'mobility_v1\' datasets are supproted." 
+        raise ValueError("\nOnly \'wisdm\', \'mobility_v1\', and \'pamap2\' datasets are supproted."
                          "Please update your configuration file.")
 
     return cfg

@@ -12,9 +12,12 @@ operation_mode: training
 #choices=['benchmarking', 'deployment', 'evaluation', 'training', 'chain_tb']
 
 dataset:
-  name: wisdm  # wisdm or mobility_v1
-  class_names: [Jogging,Stationary,Stairs,Walking] #[Stationary,Walking,Jogging,Biking] for mobility_v1 #[Jogging,Stationary,Stairs,Walking] for WISDM 
-  training_path: ../datasets/WISDM_ar_v1.1/WISDM_ar_v1.1_raw.txt  # Mandatory for all but deployment, and benchmarking
+  name: pamap2  # wisdm or mobility_v1 or pamap2
+  class_names: [stationary, walking, running, cycling] # PAMAP2
+  # class_names: [Jogging,Stationary,Stairs,Walking] #[Stationary,Walking,Jogging,Biking] for mobility_v1 #[Jogging,Stationary,Stairs,Walking] for WISDM 
+  # class_names: [lying, sitting, standing, walking, running, cycling, nordic walking, watching tv, computer work, car driving, ascending stairs, descending stairs, vacuum cleaning, ironing, folding laundry, house cleaning, playing soccer, rope jumping, other]
+
+  training_path: ../datasets/PAMAP2_Dataset  # Mandatory for all but deployment, and benchmarking
   validation_path: # ../datasets/mobility_v1/train.pkl      # Optional
   validation_split: 0.2   # Optional, default value is 0.2
   test_path: 

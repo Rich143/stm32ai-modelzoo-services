@@ -166,82 +166,89 @@ def get_data_segments(dataset: pd.DataFrame,
     return segments, labels
 
 
-def preprocess_data_new(data: np.ndarray,
-                        gravity_rot_sup: bool = True,
-                        normalization: bool = False) -> np.ndarray:
-    '''
-    Preprocess the data
-    '''
-    if gravity_rot_sup:
-        # choose a sampling frequency
-        # hardcoding to have code equivalency with C-implementation
-        f_sample = 26
-        # create a copy of data to avoid overwriting the passed dataframe
-        data_copy = data.copy()
-        # create highpass filter to remove dc components
-        f_cut = 0.4
-        filter_type = 'highpass'
-        f_norm = f_cut / f_sample
-        num, den = butter(4, f_norm, btype=filter_type)
-        data_x = data_copy[data_copy.columns[:3]]
-        # print('going in gravity_rotation filter ')
-        data_copy[ data_copy.columns[:3]] = gravity_rotation(np.array(data_x, 
-                                                                      dtype=float),
-                                                             A_COEFF = den,
-                                                             B_COEFF = num )
-        return data_copy
-    else:
-        return data
+def apply_filter_by_segment(dataset,
+                            axis_cols=['x', 'y', 'z'],
+                            segment_col='segment_id',
+                            fs=100,
+                            mean_group_delay=270,
+                            verbose=False):
+    """
+    Applies IIR filter (in SOS form) to accelerometer data, segment by segment,
+    reinitializing zi for each segment. Drops initial rows trimmed during decomposition.
+
+    Parameters:
+        dataset (pd.DataFrame): DataFrame with accelerometer columns and segment_id column.
+        sos (np.ndarray): Second-order sections of IIR filter.
+        axis_cols (list): Names of accelerometer axis columns.
+        segment_col (str): Name of the segment ID column.
+        verbose (bool): If True, prints debug info per segment.
+
+    Returns:
+        pd.DataFrame: Filtered dataset with ['x_grav', 'x_dyn', ...] columns and trimmed rows.
+    """
+    output_suffix_dyn = '_dyn'
+
+    filtered_segments = []
+
+    for seg_id, seg_df in dataset.groupby(segment_col):
+        seg_data = seg_df[axis_cols].values
+        orig_len = len(seg_data)
+
+        if orig_len < 10:
+            if verbose:
+                print(f"[SKIP] Segment {seg_id}: too short (len = {orig_len})")
+            continue
+
+        data_dyn = gravity_rotation(seg_data, fs=fs, mean_group_delay=mean_group_delay)
+
+        if data_dyn.shape[0] == 0:
+            if verbose:
+                print(f"[SKIP] Segment {seg_id}: decomposition failed or dropped all samples (original len = {orig_len})")
+            continue
+
+        drop_count = orig_len - data_dyn.shape[0]
+        kept_ratio = data_dyn.shape[0] / orig_len
+        if verbose:
+            print(f"[INFO] Segment {seg_id}: kept {kept_ratio:.0%} ( {data_dyn.shape[0]} / {orig_len} ) rows (dropped {drop_count})")
+
+        # Trim segment to match decomposed data
+        trimmed_seg_df = seg_df.iloc[-data_dyn.shape[0]:].copy()
+
+        for i, axis in enumerate(axis_cols):
+            trimmed_seg_df[axis] = data_dyn[:, i]
+
+        filtered_segments.append(trimmed_seg_df)
+
+    dataset_filtered = pd.concat(filtered_segments, axis=0).reset_index(drop=True)
+
+    return dataset_filtered
 
 
-def preprocess_data(data: np.ndarray,
+def preprocess_data(dataset: pd.DataFrame,
                     gravity_rot_sup: bool,
-                    normalization: bool) -> np.ndarray:
+                    normalization: bool,
+                    fs=100,
+                    mean_group_delay=270) -> pd.DataFrame:
 
     '''
     Preprocess the data
     '''
 
     if gravity_rot_sup:
-        # choose a sampling frequency
-        # hardcoding to have code equivalency with C-implementation
-        f_sample = 26
-        # create a copy of data to avoid overwriting the passed dataframe
-        data_copy = data.copy()
-        # create highpass filter to remove dc components
-        f_cut = 0.4
-        filter_type = 'highpass'
-        f_norm = f_cut / f_sample
-        num, den = butter(4, f_norm, btype=filter_type)
-
-        # preprocess the dataset by finding and rotating the gravity axis
-        for i in range(data_copy.shape[0]):
-            data_copy[i, :, :, 0] = gravity_rotation(np.array(data_copy[i, :, :, 0],
-                                                              dtype=float),
-                                                     A_COEFF=den, B_COEFF=num)
-        return data_copy
+        dataset_filtered = apply_filter_by_segment(dataset,
+                                                   axis_cols=['x', 'y', 'z'],
+                                                   segment_col='segment_id',
+                                                   fs=fs,
+                                                   mean_group_delay=mean_group_delay,
+                                                   verbose=True)
     if normalization:
-        data_copy = data.copy()
+        raise NotImplementedError
 
-        # Reshape the array to treat each seq_len x 3 window as a seq_len x 1 window
-        data_copy = np.reshape(data_copy, (data_copy.shape[0], data_copy.shape[1], -1))
-
-        # Calculate the mean and standard deviation of each seq_len x 1 window
-        mean = np.mean(data_copy, axis=(1, 2), keepdims=True)
-        std = np.std(data_copy, axis=(1, 2), keepdims=True)
-
-        # Normalize each seq_len x 1 window
-        data_norm = (data_copy - mean) / std
-
-        # Reshape the normalized array back to its original shape
-        data_norm = np.reshape(data_norm, (data_norm.shape[0], data_norm.shape[1], 3, 1))
-        return data_norm
-
-    return data
+    return dataset_filtered
 
 
 def load_pamap2_from_file_and_segment(dataset_path: str,
-                                      max_segment_gap_ms: float = 0.1):
+                                      max_gap_s: float = 0.1):
     """
     Load and combine PAMAP2 protocol dataset, keeping only timestamp, subject_id, activity_id,
     and 16g accelerometer data. Filters out activity_id == 0 and segments the data into
@@ -250,7 +257,7 @@ def load_pamap2_from_file_and_segment(dataset_path: str,
     Adds a time_diff_ms column (milliseconds between samples) and a globally unique segment_id.
 
     Parameters:
-        protocol_folder (str): Path to the 'protocol' folder containing the .dat files.
+        dataset_path (str): Path to the PAMAP2 dataset
         max_gap_s (float): Max allowed gap (in seconds) to consider data as continuous.
 
     Returns:
@@ -265,6 +272,7 @@ def load_pamap2_from_file_and_segment(dataset_path: str,
                 [f'ankle_acc16_{axis}' for axis in ['x', 'y', 'z']]
 
     all_dfs = []
+    protocol_folder = os.path.join(dataset_path, 'Protocol')
     file_pattern = os.path.join(protocol_folder, 'subject1*.dat')
     segment_counter = 0  # global segment ID counter
 
@@ -330,45 +338,86 @@ def fill_nans(df):
     .apply(lambda group: group.interpolate())
     .reset_index(drop=True)
     )
-    
+
     # Fill any remaining NaNs with 0
     df = df.fillna(0)
-    
+
     return df
 
-def class_name_to_id(name):
-    """
-    Convert a PAMAP2 activity name (case-insensitive) to its corresponding activity ID.
+# Central lookup: name (lowercase) → ID
+_ACTIVITY_NAME_TO_ID = {
+    'lying': 1,
+    'sitting': 2,
+    'standing': 3,
+    'walking': 4,
+    'running': 5,
+    'cycling': 6,
+    'nordic walking': 7,
+    'watching tv': 9,
+    'computer work': 10,
+    'car driving': 11,
+    'ascending stairs': 12,
+    'descending stairs': 13,
+    'vacuum cleaning': 16,
+    'ironing': 17,
+    'folding laundry': 18,
+    'house cleaning': 19,
+    'playing soccer': 20,
+    'rope jumping': 24,
+    'other': 0,
+    'stationary': 25,
+    'stairs': 26
+}
 
-    Parameters:
-        name (str): Activity name (e.g., 'sitting', 'walking')
+# Reverse: ID → name
+_ACTIVITY_ID_TO_NAME = {v: k for k, v in _ACTIVITY_NAME_TO_ID.items()}
 
-    Returns:
-        int: Corresponding activity ID, or None if not found
+
+def class_name_to_id(name: str) -> int:
     """
-    activity_map = {
-        'lying': 1,
-        'sitting': 2,
-        'standing': 3,
-        'walking': 4,
-        'running': 5,
-        'cycling': 6,
-        'nordic walking': 7,
-        'watching tv': 9,
-        'computer work': 10,
-        'car driving': 11,
-        'ascending stairs': 12,
-        'descending stairs': 13,
-        'vacuum cleaning': 16,
-        'ironing': 17,
-        'folding laundry': 18,
-        'house cleaning': 19,
-        'playing soccer': 20,
-        'rope jumping': 24,
-        'other': 0
+    Convert a PAMAP2 activity name to its ID.
+    Raises KeyError if the name is not found.
+    """
+    key = name.lower().strip()
+    if key not in _ACTIVITY_NAME_TO_ID:
+        raise KeyError(f"Activity name not found: '{name}'")
+    return _ACTIVITY_NAME_TO_ID[key]
+
+
+def class_id_to_name(class_id: int) -> str:
+    """
+    Convert an activity ID to its name.
+    Raises KeyError if the ID is not found.
+    """
+    if class_id not in _ACTIVITY_ID_TO_NAME:
+        raise KeyError(f"Activity ID not found: {class_id}")
+    return _ACTIVITY_ID_TO_NAME[class_id]
+
+
+def group_activity_ids(dataset):
+    """
+    Replace fine-grained activity IDs in `Activity_Label` with grouped activity IDs
+    using 'stationary' and 'stairs' where applicable.
+
+    Modifies the dataset in-place.
+    """
+    # Grouped activity name → group label
+    grouping_map = {
+        'lying': 'stationary',
+        'sitting': 'stationary',
+        'standing': 'stationary',
+        'ascending stairs': 'stairs',
+        'descending stairs': 'stairs',
     }
 
-    return activity_map.get(name.lower().strip())
+    # Build id-to-group-id mapping using your class_name_to_id()
+    id_to_group_id = {
+        class_name_to_id(orig): class_name_to_id(grouped)
+        for orig, grouped in grouping_map.items()
+    }
+
+    # Apply mapping (leave other IDs unchanged)
+    dataset['Activity_Label'] = dataset['Activity_Label'].map(id_to_group_id).fillna(dataset['Activity_Label'])
 
 
 def load_pamap2(dataset_path: str,
@@ -396,47 +445,28 @@ def load_pamap2(dataset_path: str,
     # Fill NaNs via linear interpolation
     dataset = fill_nans(dataset)
 
+    # Group activities
+    group_activity_ids(dataset)
+
     # Keep only activities of interest
     activities_of_interest = [class_name_to_id(activity) for activity in class_names]
-    df = df[df["Activity_Label"].isin(activities_of_interest)]
+    dataset = dataset[dataset["Activity_Label"].isin(activities_of_interest)]
 
-    # clean_csv(dataset_path)
-
-    # # read all the data in csv 'WISDM_ar_v1.1_raw.txt' into a dataframe
-    # #  called dataset
-    # columns = ['User', 'Activity_Label', 'Arrival_Time',
-               # 'x', 'y', 'z']  # headers for the columns
-
-    # dataset = pd.read_csv(dataset_path, header=None,
-                          # names=columns, delimiter=',')
-
-    # # removing the ; at the end of each line and casting the last variable
-    # #  to datatype float from string
-    # dataset['z'] = [float(str(char).replace(";", "")) for char in dataset['z']]
-
-    # # remove the user column as we do not need it
-    # dataset = dataset.drop('User', axis=1)
-
-    # # as we are workign with numbers, let us replace all the empty columns
-    # # entries with NaN (not a number)
-    # dataset.replace(to_replace='null', value=np.NaN)
-
-    # # remove any data entry which contains NaN as a member
-    # dataset = dataset.dropna(axis=0, how='any')
-    if len(class_names) == 4:
-        dataset['Activity_Label'] = ['Stationary' if activity == 'Standing' or activity == 'Sitting' else activity
-                                     for activity in dataset['Activity_Label']]
-        dataset['Activity_Label'] = ['Stairs' if activity == 'Upstairs' or activity == 'Downstairs' else activity
-                                     for activity in dataset['Activity_Label']]
-
-    dataset = preprocess_data(dataset, gravity_rot_sup, normalization)
+    # Preprocess Dataset
+    dataset = preprocess_data(dataset,
+                              gravity_rot_sup,
+                              normalization,
+                              fs=100,
+                              mean_group_delay=270)
 
     # removing the columns for time stamp and rearranging remaining columns
     dataset = dataset[['x', 'y', 'z', 'Activity_Label']]
     segments, labels = get_data_segments(dataset=dataset,
                                          seq_len=input_shape[0])
 
-    labels = to_categorical([class_names.index(label)
+    # one-hot encode labels, convert from id to name first so that the order is
+    # defined based on the config file
+    labels = to_categorical([class_names.index(class_id_to_name(label))
                             for label in labels], num_classes=len(class_names))
 
     # split data into train and test
@@ -671,7 +701,18 @@ def load_dataset(dataset_name: str = None,
                                                      batch_size=batch_size,
                                                      seed=seed,
                                                      to_cache=to_cache)
+    elif dataset_name == "pamap2":
+        train_ds, val_ds, test_ds = load_pamap2(dataset_path=training_path,
+                                               class_names=class_names,
+                                               input_shape=input_shape,
+                                               gravity_rot_sup=gravity_rot_sup,
+                                               normalization=normalization,
+                                               val_split=validation_split,
+                                               test_split=test_split,
+                                               seed=seed,
+                                               batch_size=batch_size,
+                                               to_cache=to_cache)
     else:
-        raise NameError('Only \'wisdm\' and \'mobility_v1\' datasets are supported!')
+        raise NameError('Only \'wisdm\', \'mobility_v1\' and \'pamap2\' datasets are supported!')
 
     return train_ds, val_ds, test_ds
