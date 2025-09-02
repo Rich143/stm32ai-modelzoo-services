@@ -149,75 +149,22 @@ if __name__ == '__main__':
 
 
     import matplotlib.pyplot as plt
+    from data_loader import load_rad_from_file
 
+    df = load_rad_from_file("../datasets/rad/rad_dataset.csv")
 
-    # Parameters
-    fs = 26               # Sampling frequency (Hz)
-    duration_sec = 500    # Total duration in seconds
-    n_samples = duration_sec * fs
-    f_walk = 1.5          # Walking frequency (Hz)
+    input_x = df['unproc_x'].values
+    input_y = df['unproc_y'].values
+    input_z = df['unproc_z'].values
 
-    # Time vector
-    t = np.linspace(0, duration_sec, n_samples, endpoint=False)
+    accel_data = np.column_stack((input_x, input_y, input_z))
 
-    # Simulate gravity vector
-    gravity = np.full((n_samples, 3), [0,0,-9.81])
+    t = df['time_s'].values
 
-    # Dynamic motion (Walking)
-    walking_x = np.zeros_like(t)
-    walking_y = np.zeros_like(t)
-    walking_z = 2 * np.sin(2 * np.pi * f_walk * t)
-    walking = np.column_stack((walking_x, walking_y, walking_z))
-
-    # # Add rotation to gravity and walking (eg to simulate phone rotating in pocket)
-
-    # pitch_freq=0.01
-    # pitch_mag_deg=400 
-    # roll_freq=0.05
-    # roll_mag_deg=0
-    # yaw_freq=0.025
-    # yaw_mag_deg=0
-    # rotation_noise_std=0
-
-    # rotated_walking = rotate_signal_with_orientation(
-        # walking,
-        # t,
-        # pitch_freq=pitch_freq,
-        # roll_freq=roll_freq,
-        # yaw_freq=yaw_freq,
-        # pitch_mag_deg=pitch_mag_deg,
-        # roll_mag_deg=roll_mag_deg,
-        # yaw_mag_deg=yaw_mag_deg,
-        # noise_std=rotation_noise_std)
-
-    # rotated_gravity = rotate_signal_with_orientation(
-        # gravity,
-        # t,
-        # pitch_freq=pitch_freq,
-        # roll_freq=roll_freq,
-        # yaw_freq=yaw_freq,
-        # pitch_mag_deg=pitch_mag_deg,
-        # roll_mag_deg=roll_mag_deg,
-        # yaw_mag_deg=yaw_mag_deg,
-        # noise_std=rotation_noise_std)
-
-    # # Add noise
-    # burst_probability = 0.01
-    # burst_magnitude = 3.0
-    # bursts = np.random.rand(*gravity.shape) < burst_probability
-    # burst_noise = bursts * np.random.normal(0.0, burst_magnitude, gravity.shape)
-    # background_noise = np.random.normal(0.0, 0.2, gravity.shape)
-    # noise = burst_noise + background_noise
-    noise = np.zeros_like(walking)
-
-    # Final accelerometer signal
-    # accel_data = rotated_walking + rotated_gravity + noise
-    accel_data = walking + gravity + noise
-
-    # Plot Before
     plt.figure(figsize=(10, 4))
-    for i, label in enumerate(['X', 'Y', 'Z']):
-        plt.plot(t[:1000], accel_data[:1000, i], label='Accel Data ' + label)
+    plt.plot(t, input_x, label='Accel Data X')
+    plt.plot(t, input_y, label='Accel Data Y')
+    plt.plot(t, input_z, label='Accel Data Z')
     plt.xlabel('Time (s)')
     plt.ylabel('Acceleration (m/s²)')
     plt.title('Accel data in Device Frame (First 50s)')
@@ -225,13 +172,88 @@ if __name__ == '__main__':
     plt.grid(True)
     plt.show()
 
-    data_g, data_dyn = decompose_dyn(accel_data)
+    # # Parameters
+    # fs = 26               # Sampling frequency (Hz)
+    # duration_sec = 500    # Total duration in seconds
+    # n_samples = duration_sec * fs
+    # f_walk = 1.5          # Walking frequency (Hz)
+
+    # # Time vector
+    # t = np.linspace(0, duration_sec, n_samples, endpoint=False)
+
+    # # Simulate gravity vector
+    # gravity = np.full((n_samples, 3), [0,0,-9.81])
+
+    # # Dynamic motion (Walking)
+    # walking_x = np.zeros_like(t)
+    # walking_y = np.zeros_like(t)
+    # walking_z = 2 * np.sin(2 * np.pi * f_walk * t)
+    # walking = np.column_stack((walking_x, walking_y, walking_z))
+
+    # # # Add rotation to gravity and walking (eg to simulate phone rotating in pocket)
+
+    # # pitch_freq=0.01
+    # # pitch_mag_deg=400 
+    # # roll_freq=0.05
+    # # roll_mag_deg=0
+    # # yaw_freq=0.025
+    # # yaw_mag_deg=0
+    # # rotation_noise_std=0
+
+    # # rotated_walking = rotate_signal_with_orientation(
+        # # walking,
+        # # t,
+        # # pitch_freq=pitch_freq,
+        # # roll_freq=roll_freq,
+        # # yaw_freq=yaw_freq,
+        # # pitch_mag_deg=pitch_mag_deg,
+        # # roll_mag_deg=roll_mag_deg,
+        # # yaw_mag_deg=yaw_mag_deg,
+        # # noise_std=rotation_noise_std)
+
+    # # rotated_gravity = rotate_signal_with_orientation(
+        # # gravity,
+        # # t,
+        # # pitch_freq=pitch_freq,
+        # # roll_freq=roll_freq,
+        # # yaw_freq=yaw_freq,
+        # # pitch_mag_deg=pitch_mag_deg,
+        # # roll_mag_deg=roll_mag_deg,
+        # # yaw_mag_deg=yaw_mag_deg,
+        # # noise_std=rotation_noise_std)
+
+    # # # Add noise
+    # # burst_probability = 0.01
+    # # burst_magnitude = 3.0
+    # # bursts = np.random.rand(*gravity.shape) < burst_probability
+    # # burst_noise = bursts * np.random.normal(0.0, burst_magnitude, gravity.shape)
+    # # background_noise = np.random.normal(0.0, 0.2, gravity.shape)
+    # # noise = burst_noise + background_noise
+    # noise = np.zeros_like(walking)
+
+    # # Final accelerometer signal
+    # # accel_data = rotated_walking + rotated_gravity + noise
+    # accel_data = walking + gravity + noise
+
+    # Plot Before
+    plt.figure(figsize=(10, 4))
+    for i, label in enumerate(['X', 'Y', 'Z']):
+        plt.plot(t, accel_data, label='Accel Data ' + label)
+    plt.xlabel('Time (s)')
+    plt.ylabel('Acceleration (m/s²)')
+    plt.title('Accel data in Device Frame (First 50s)')
+    plt.legend()
+    plt.grid(True)
+    plt.show()
+
+    # data_g, data_dyn = decompose_dyn(accel_data)
     data_dyn = gravity_rotation(accel_data)
 
     # Plot After
     plt.figure(figsize=(10, 4))
     for i, label in enumerate(['X', 'Y', 'Z']):
-        plt.plot(t[:1000], data_dyn[:1000, i], label='Data Dyn ' + label)
+        # plt.plot(t, data_dyn[:, i], label='Data Dyn ' + label)
+        plt.plot(data_dyn[:, i], label='Data Dyn ' + label)
     plt.xlabel('Time (s)')
     plt.ylabel('Acceleration (m/s²)')
     plt.title('Data Dyn rotated')
@@ -239,15 +261,16 @@ if __name__ == '__main__':
     plt.grid(True)
     plt.show()
 
-    plt.figure(figsize=(10, 4))
-    for i, label in enumerate(['X', 'Y', 'Z']):
-        plt.plot(t[:1000], data_g[:1000, i], label='Data Dyn ' + label)
-    plt.xlabel('Time (s)')
-    plt.ylabel('Acceleration (m/s²)')
-    plt.title('Data g rotated')
-    plt.legend()
-    plt.grid(True)
-    plt.show()
+    # plt.figure(figsize=(10, 4))
+    # for i, label in enumerate(['X', 'Y', 'Z']):
+        # # plt.plot(t, data_g[:, i], label='Data Dyn ' + label)
+        # plt.plot(data_g[:, i], label='Data Dyn ' + label)
+    # plt.xlabel('Time (s)')
+    # plt.ylabel('Acceleration (m/s²)')
+    # plt.title('Data g rotated')
+    # plt.legend()
+    # plt.grid(True)
+    # plt.show()
 
     # plot_all_axes_fft(rotated_gravity, rotated_walking, fs, Nf, zero_padding_factor=4, db_scale=True)
     #plot_vector_trajectory_3d(gravity, step=10)

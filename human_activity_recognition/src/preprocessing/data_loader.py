@@ -246,6 +246,32 @@ def preprocess_data(dataset: pd.DataFrame,
 
     return dataset_filtered
 
+def load_rad_from_file(dataset_path: str):
+    """
+    Load RAD dataset from a CSV file.
+    """
+    columns = [
+        "unproc_x", "unproc_y", "unproc_z",
+        "lowpass_filtered_x", "lowpass_filtered_y", "lowpass_filtered_z",
+        "proc_x", "proc_y", "proc_z",
+        "contains_output",
+        "model_output_0", "model_output_1", "model_output_2", "model_output_3",
+        "output_class"
+    ]
+
+    # Load CSV
+    df = pd.read_csv(dataset_path, names=columns, skiprows=1)
+    df["time_s"] = df.index * 0.01  # Assuming 100 Hz
+
+    # Mask model output and class index when contains_output != 1
+    df["model_output_0_masked"] = np.where(df["contains_output"] == 1, df["model_output_0"], np.nan)
+    df["model_output_1_masked"] = np.where(df["contains_output"] == 1, df["model_output_1"], np.nan)
+    df["model_output_2_masked"] = np.where(df["contains_output"] == 1, df["model_output_2"], np.nan)
+    df["model_output_3_masked"] = np.where(df["contains_output"] == 1, df["model_output_3"], np.nan)
+    df["output_class_masked"]   = np.where(df["contains_output"] == 1, df["output_class"], np.nan)
+
+    return df
+
 
 def load_pamap2_from_file_and_segment(dataset_path: str,
                                       max_gap_s: float = 0.1):
