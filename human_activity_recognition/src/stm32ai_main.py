@@ -6,8 +6,11 @@
 #  * the root directory of this software component.
 #  * If no LICENSE file comes with this software, it is provided AS-IS.
 #  *--------------------------------------------------------------------------------------------*/
+import setuptools
 import os
+import shutil
 import sys
+from datetime import datetime
 from hydra.core.hydra_config import HydraConfig
 import hydra
 import warnings
@@ -17,6 +20,7 @@ os.environ['TF_CPP_MIN_LOG_LEVEL'] = '3'
 import tensorflow as tf
 from omegaconf import DictConfig
 import mlflow
+import mlflow.keras
 import argparse
 from clearml import Task
 from clearml.backend_config.defs import get_active_config_file
@@ -51,6 +55,33 @@ from typing import Optional
 from logs_utils import log_to_file
 
 
+def mlflow_init(cfg: DictConfig = None, experiment_name: str = "") -> None:
+    """
+    Initializes MLflow tracking with the given configuration.
+
+    Args:
+        cfg (dict): A dictionary containing the configuration parameters for MLflow tracking.
+
+    Returns:
+        None
+    """
+
+    if experiment_name == "":
+        experiment_name = cfg.general.project_name
+
+    mlflow.set_tracking_uri(cfg['mlflow']['uri'])
+
+    mlflow.set_experiment(experiment_name)
+
+    run_name = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
+    mlflow.start_run(run_name=run_name)
+
+    params = {"operation_mode": cfg.operation_mode}
+    mlflow.log_params(params)
+
+    mlflow.tensorflow.autolog(log_models=False)
+
+
 def chain_tb(cfg: DictConfig = None, train_ds: tf.data.Dataset = None,
              valid_ds: tf.data.Dataset = None, test_ds: tf.data.Dataset = None) -> None:
     """
@@ -79,7 +110,31 @@ def chain_tb(cfg: DictConfig = None, train_ds: tf.data.Dataset = None,
     benchmark(cfg=cfg, model_path_to_benchmark=trained_model_path, credentials=credentials)
     print('[INFO] : benchmarking complete.')
     display_figures(cfg)
-    
+
+
+def experiment_mode(configs: DictConfig = None) -> None:
+    input_shapes = [(24, 3, 1), (32, 3, 1), (48, 3, 1), (64, 3, 1), (96, 3, 1), (128, 3, 1)]
+
+    datasets = []
+
+    for input_shape in input_shapes:
+        print("[INFO] : Preprocessing for input shape: ", input_shape)
+
+        configs.training.model.input_shape = input_shape
+        preprocess_output = preprocess(cfg=configs)
+        train_ds, valid_ds, test_ds = preprocess_output
+
+        datasets.append((train_ds, valid_ds, test_ds))
+
+    for i in range (len(input_shapes)):
+        with mlflow.start_run(run_name=f"Input Shape: {input_shapes[i]}", nested=True):
+            configs.training.model.input_shape = input_shapes[i]
+
+            train_ds, valid_ds, test_ds = datasets[i]
+
+            print("[INFO] : Input shape: ", configs.training.model.input_shape)
+            mlflow.log_params({"input_shape": configs.training.model.input_shape})
+            train(cfg=configs, train_ds=train_ds, valid_ds=valid_ds, test_ds=test_ds)
 
 def process_mode(mode: str = None,
                  configs: DictConfig = None,
@@ -103,8 +158,6 @@ def process_mode(mode: str = None,
     Raises:
         ValueError: If an invalid operation_mode is selected or if required datasets are missing.
     """
-    # logging the operation_mode in the output_dir/stm32ai_main.log file
-    log_to_file(configs.output_dir, f'operation_mode: {mode}')
     # Check the selected mode and perform the corresponding operation
     if mode == 'training':
         if test_ds:
@@ -113,6 +166,8 @@ def process_mode(mode: str = None,
             train(cfg=configs, train_ds=train_ds, valid_ds=valid_ds)
         display_figures(configs)
         print('[INFO] : Training complete.')
+    elif mode == 'experiment':
+        print("[ERROR] : Experiment mode not supported.")
     elif mode == 'evaluation':
         if test_ds:
             evaluate(cfg=configs, eval_ds=test_ds, name_ds="test_set")
@@ -137,7 +192,9 @@ def process_mode(mode: str = None,
         raise ValueError(f"Invalid mode: {mode}")
 
     # Record the whole hydra working directory to get all info
-    mlflow.log_artifact(configs.output_dir) 
+    folder = configs.output_dir  # this is a directory
+    zip_path = shutil.make_archive("run_outputs", "zip", folder)
+    mlflow.log_artifact(zip_path)  # single file => no copy_tree
     if mode in ['benchmarking', 'chain_tb']:
         mlflow.log_param("model_path", configs.general.model_path)
         mlflow.log_param("stm32ai_version", configs.tools.stm32ai.version)
@@ -180,7 +237,9 @@ def main(cfg: DictConfig) -> None:
     # Parse the configuration file
     cfg = get_config(cfg)
     cfg.output_dir = HydraConfig.get().run.dir
-    mlflow_ini(cfg)
+
+    # TODO! use the config file for experiment name
+    mlflow_init(cfg, "Input size sweep")
 
     # Checks if there's a valid ClearML configuration file
     print(f"[INFO] : ClearML config check")
@@ -201,17 +260,24 @@ def main(cfg: DictConfig) -> None:
     
     # Extract the mode from the command-line arguments
     mode = cfg.operation_mode
-    valid_modes = ['training', 'evaluation', 'chain_tb']
+    valid_modes = ['training',  'experiment', 'evaluation', 'chain_tb']
     if mode in valid_modes:
-        # Perform further processing based on the selected mode
-        preprocess_output = preprocess(cfg=cfg)
-        train_ds, valid_ds, test_ds = preprocess_output
-        # Process the selected mode
-        process_mode(mode=mode,
-                     configs=cfg,
-                     train_ds=train_ds,
-                     valid_ds=valid_ds,
-                     test_ds=test_ds)
+        if mode == 'experiment':
+            print("[INFO] Starting experiment mode")
+            # logging the operation_mode in the output_dir/stm32ai_main.log file
+            log_to_file(cfg.output_dir, f'operation_mode: {mode}')
+            experiment_mode(configs=cfg)
+            print('[INFO] : Experiment complete.')
+        else:
+            # Perform further processing based on the selected mode
+            preprocess_output = preprocess(cfg=cfg)
+            train_ds, valid_ds, test_ds = preprocess_output
+            # Process the selected mode
+            process_mode(mode=mode,
+                         configs=cfg,
+                         train_ds=train_ds,
+                         valid_ds=valid_ds,
+                         test_ds=test_ds)
     else:
         # Process the selected mode
         process_mode(mode=mode, 

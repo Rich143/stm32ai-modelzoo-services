@@ -178,12 +178,13 @@ def get_config(config_data: DictConfig) -> DefaultMunch:
     cfg = DefaultMunch.fromDict(config_dict)
     mode_groups = DefaultMunch.fromDict({
         "training": ["training", "chain_tb"],
+        "experiment": ["training"],
         "evaluation": ["evaluation"],
         "benchmarking": ["benchmarking", "chain_tb"],
         "deployment": ["deployment"],
         "quantization": []
     })
-    mode_choices = ["training", "evaluation", "deployment", "benchmarking", "chain_tb"]
+    mode_choices = ["training", "experiment", "evaluation", "deployment", "benchmarking", "chain_tb"]
     legal = ["general", "operation_mode", "dataset", "preprocessing", "training",
              "prediction", "tools", "benchmarking", "deployment", "mlflow"]
     parse_top_level(cfg,
