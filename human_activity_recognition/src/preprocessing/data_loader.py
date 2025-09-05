@@ -505,24 +505,38 @@ def load_pamap2(dataset_path: str,
                                                           test_size=val_split,
                                                           shuffle=True,
                                                           random_state=seed)
-    train_ds = tf.data.Dataset.from_tensor_slices((train_x, train_y))
+
+    print("Dataset stats:")
+    train_size = train_x.shape[0]
+    valid_size = valid_x.shape[0]
+    test_size = test_x.shape[0]
+
+    print(f"Train size: {train_size}")
+    print(f"Valid size: {valid_size}")
+    print(f"Test size: {test_size}")
+    print(f"Classes: {len(class_names)}")
+
     if batch_size is None:
         batch_size=32
-    train_ds = train_ds.shuffle(train_x.shape[0],
-                                reshuffle_each_iteration=True,
-                                seed=seed).batch(batch_size)
-    valid_ds = tf.data.Dataset.from_tensor_slices((valid_x, valid_y))
-    valid_ds = valid_ds.shuffle(valid_x.shape[0],
-                                reshuffle_each_iteration=True,
-                                seed=seed).batch(batch_size)
-    test_ds = tf.data.Dataset.from_tensor_slices((test_x, test_y))
-    test_ds = test_ds.shuffle(test_x.shape[0],
-                              reshuffle_each_iteration=True,
-                              seed=seed).batch(batch_size)
+
+    train_ds = (tf.data.Dataset.from_tensor_slices((train_x, train_y))
+                .shuffle(train_x.shape[0], reshuffle_each_iteration=True, seed=seed)
+                .batch(batch_size)
+                .repeat())
+
+    valid_ds = (tf.data.Dataset.from_tensor_slices((valid_x, valid_y))
+                .shuffle(valid_x.shape[0], reshuffle_each_iteration=True, seed=seed)
+                .batch(batch_size))
+
+    test_ds = (tf.data.Dataset.from_tensor_slices((test_x, test_y))
+               .shuffle(test_x.shape[0], reshuffle_each_iteration=True, seed=seed)
+               .batch(batch_size))
+
     if to_cache:
         train_ds = train_ds.cache()
         valid_ds = valid_ds.cache()
         test_ds = test_ds.cache()
+
     return train_ds, valid_ds, test_ds
 
 

@@ -198,19 +198,6 @@ def train(cfg: DictConfig = None, train_ds: tf.data.Dataset = None,
     class_names = cfg.dataset.class_names
     num_classes = len(class_names)
 
-    print("Dataset stats:")
-    train_size = sum([x.shape[0] for x, _ in train_ds])
-    valid_size = sum([x.shape[0] for x, _ in valid_ds])
-    if test_ds:
-        test_size = sum([x.shape[0] for x, _ in test_ds])
-
-    print("  classes:", num_classes)
-    print("  training set size:", train_size)
-    print("  validation set size:", valid_size)
-    if test_ds:
-        print("  test set size:", test_size)
-    else:
-        print("  no test set")
 
     model, _ = load_model_to_train(cfg.training, model_path=cfg.general.model_path,
                                    num_classes=num_classes)
@@ -284,10 +271,12 @@ def train(cfg: DictConfig = None, train_ds: tf.data.Dataset = None,
 
     # Train the model
     print("Starting training...")
+    print("Training for {} epochs, steps per epoch : {}, batch size : {}".format(cfg.training.epochs, cfg.training.steps_per_epoch, cfg.training.batch_size))
     start_time = timer()
     history = model.fit(train_ds,
                         validation_data=valid_ds,
                         epochs=cfg.training.epochs,
+                        steps_per_epoch=cfg.training.steps_per_epoch,
                         callbacks=callbacks)
     end_time = timer()
     #save the last epoch history in the log file
