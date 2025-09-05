@@ -13,8 +13,41 @@ import sys
 import os
 
 from models_utils import get_model_name_and_its_input_shape
-from data_loader import load_dataset
+from data_loader import load_dataset, load_and_filter_dataset, segment_dataset
+import pandas as pd
 
+def load_and_filter_dataset_from_config(cfg: DictConfig = None) -> Tuple:
+    dataset = load_and_filter_dataset(dataset_name=cfg.dataset.name,
+                                      dataset_path=cfg.dataset.training_path,
+                                      class_names=cfg.dataset.class_names,
+                                      gravity_rot_sup=cfg.preprocessing.gravity_rot_sup,
+                                      seed=cfg.dataset.seed)
+
+    return dataset
+
+def segment_dataset_from_config(dataset: pd.DataFrame, cfg: DictConfig = None) -> Tuple:
+    # Get the model input shape
+    if cfg.general.model_path:
+        _, input_shape = get_model_name_and_its_input_shape(cfg.general.model_path)
+    else:
+        # We are running a training using the 'training' section of the config file.
+        if cfg.training.model:
+            input_shape = cfg.training.model.input_shape
+        else:
+            raise ValueError('Either `cfg.general.model_path` or `cfg.model` information should be provided.\n'
+                             'Check your configuration file.')
+
+    batch_size = cfg.training.batch_size
+    train_ds, valid_ds, test_ds = segment_dataset(dataset_name=cfg.dataset.name,
+                                                  dataset=dataset,
+                                                  validation_split=cfg.dataset.validation_split,
+                                                  test_split=cfg.dataset.test_split,
+                                                  class_names=cfg.dataset.class_names,
+                                                  input_shape=input_shape[:2],
+                                                  batch_size=batch_size,
+                                                  seed=cfg.dataset.seed)
+
+    return train_ds, valid_ds, test_ds
 
 def preprocess(cfg: DictConfig = None) -> Tuple:
     """

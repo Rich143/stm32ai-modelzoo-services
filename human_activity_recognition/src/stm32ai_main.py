@@ -44,7 +44,7 @@ sys.path.append(os.path.join(os.path.dirname(__file__), './models'))
 from logs_utils import mlflow_ini
 from gpu_utils import set_gpu_memory_limit
 from cfg_utils import get_random_seed
-from preprocess import preprocess
+from preprocess import preprocess, load_and_filter_dataset_from_config, segment_dataset_from_config
 from visualize_utils import display_figures
 from parse_config import get_config
 from train import train
@@ -113,16 +113,21 @@ def chain_tb(cfg: DictConfig = None, train_ds: tf.data.Dataset = None,
 
 
 def experiment_mode(configs: DictConfig = None) -> None:
-    input_shapes = [(24, 3, 1), (32, 3, 1), (48, 3, 1), (64, 3, 1), (96, 3, 1), (128, 3, 1)]
+    input_lengths = [i for i in range(20, 65, 4)]
 
     datasets = []
+    input_shapes = []
 
-    for input_shape in input_shapes:
+    dataset = load_and_filter_dataset_from_config(cfg=configs)
+
+    for input_len in input_lengths:
+        input_shape = (input_len, 3, 1)
+        input_shapes.append(input_shape)
+
         print("[INFO] : Preprocessing for input shape: ", input_shape)
 
         configs.training.model.input_shape = input_shape
-        preprocess_output = preprocess(cfg=configs)
-        train_ds, valid_ds, test_ds = preprocess_output
+        train_ds, valid_ds, test_ds = segment_dataset_from_config(cfg=configs, dataset=dataset)
 
         datasets.append((train_ds, valid_ds, test_ds))
 
@@ -134,6 +139,7 @@ def experiment_mode(configs: DictConfig = None) -> None:
 
             print("[INFO] : Input shape: ", configs.training.model.input_shape)
             mlflow.log_params({"input_shape": configs.training.model.input_shape})
+            mlflow.log_params({"input_length": input_lengths[i]})
             train(cfg=configs, train_ds=train_ds, valid_ds=valid_ds, test_ds=test_ds)
 
 def process_mode(mode: str = None,
