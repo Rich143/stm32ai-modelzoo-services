@@ -45,6 +45,8 @@ def segment_dataset_from_config(dataset: pd.DataFrame, cfg: DictConfig = None) -
                                                   class_names=cfg.dataset.class_names,
                                                   input_shape=input_shape[:2],
                                                   batch_size=batch_size,
+                                                  gaussian_noise=cfg.preprocessing.gaussian_noise,
+                                                  gaussian_std=cfg.preprocessing.gaussian_std,
                                                   seed=cfg.dataset.seed)
 
     return train_ds, valid_ds, test_ds

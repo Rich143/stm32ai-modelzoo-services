@@ -22,6 +22,7 @@ from preprocessing import gravity_rotation
 import statistics
 import os
 from glob import glob
+import mlflow
 
 
 def read_pkl_dataset(pkl_file_path: str,
@@ -489,14 +490,26 @@ def load_pamap2_and_filter(dataset_path: str,
 
     return dataset
 
+
+def make_add_gaussian_noise_seeded(noise_std, seed):
+    g = tf.random.Generator.from_seed(seed)
+
+    def add_gaussian_noise_seeded(x, y):
+        noise = g.normal(tf.shape(x), stddev=noise_std, dtype=x.dtype)
+        return x + noise, y
+
+    return add_gaussian_noise_seeded
+
 def segment_pamap2_dataset(dataset: pd.DataFrame,
-               class_names: List[str],
-               input_shape: Tuple,
-               val_split: float,
-               test_split: float,
-               seed: int,
-               batch_size: int,
-               to_cache: bool = False):
+                           class_names: List[str],
+                           input_shape: Tuple,
+                           val_split: float,
+                           test_split: float,
+                           seed: int,
+                           batch_size: int,
+                           gaussian_noise: bool = False,
+                           gaussian_std: float = 0,
+                           to_cache: bool = False):
     """
     Segments the pamap2 dataset into training, validation and test sets.
     """
@@ -537,8 +550,18 @@ def segment_pamap2_dataset(dataset: pd.DataFrame,
 
     train_ds = (tf.data.Dataset.from_tensor_slices((train_x, train_y))
                 .shuffle(train_x.shape[0], reshuffle_each_iteration=True, seed=seed)
-                .batch(batch_size)
-                .repeat())
+                .batch(batch_size))
+
+    if gaussian_noise:
+        train_ds = train_ds.map(make_add_gaussian_noise_seeded(gaussian_std, seed), num_parallel_calls=tf.data.AUTOTUNE)
+        mlflow.log_params({"gaussian_noise": True})
+        mlflow.log_params({"gaussian_std": gaussian_std})
+    else:
+        mlflow.log_params({"gaussian_noise": False})
+        mlflow.log_params({"gaussian_std": 0})
+
+
+    train_ds = train_ds.repeat().prefetch(tf.data.AUTOTUNE)
 
     valid_ds = (tf.data.Dataset.from_tensor_slices((valid_x, valid_y))
                 .shuffle(valid_x.shape[0], reshuffle_each_iteration=True, seed=seed)
@@ -814,6 +837,8 @@ def segment_dataset(dataset_name: str,
                     class_names: List[str] = None,
                     input_shape: tuple[int] = None,
                     batch_size: int = None,
+                    gaussian_noise: bool = False,
+                    gaussian_std: float = 0,
                     seed: int = None,
                     to_cache: bool = False) -> Tuple[tf.data.Dataset, tf.data.Dataset, tf.data.Dataset]:
     if dataset_name == "pamap2":
@@ -823,6 +848,8 @@ def segment_dataset(dataset_name: str,
                                                            val_split=validation_split,
                                                            test_split=test_split,
                                                            seed=seed,
+                                                           gaussian_noise=gaussian_noise,
+                                                           gaussian_std=gaussian_std,
                                                            batch_size=batch_size,
                                                            to_cache=to_cache)
 

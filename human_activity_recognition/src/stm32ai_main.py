@@ -120,6 +120,13 @@ def experiment_mode(configs: DictConfig = None) -> None:
 
     dataset = load_and_filter_dataset_from_config(cfg=configs)
 
+    if configs.preprocessing.gaussian_noise:
+        mlflow.log_params({"gaussian_noise": configs.preprocessing.gaussian_noise})
+        mlflow.log_params({"gaussian_std": configs.preprocessing.gaussian_std})
+    else:
+        mlflow.log_params({"gaussian_noise": False})
+        mlflow.log_params({"gaussian_std": 0})
+
     for input_len in input_lengths:
         input_shape = (input_len, 3, 1)
         input_shapes.append(input_shape)

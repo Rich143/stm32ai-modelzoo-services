@@ -114,7 +114,7 @@ def parse_preprocessing_section(cfg: DictConfig) -> None:
         cfg (DictConfig): configuration dictionary containing the preprocessing info
     '''
 
-    legal = ["gravity_rot_sup", "normalization"]
+    legal = ["gravity_rot_sup", "normalization", "gaussian_noise", "gaussian_std"]
     check_config_attributes(cfg, specs={"legal": legal, "all": legal}, section="preprocessing")
 
 
