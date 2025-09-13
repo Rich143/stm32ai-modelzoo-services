@@ -103,9 +103,9 @@ def chain_tb(cfg: DictConfig = None, train_ds: tf.data.Dataset = None,
         _, _, credentials = cloud_connect(stm32ai_version=cfg.tools.stm32ai.version)
 
     if test_ds:
-        trained_model_path = train(cfg=cfg, train_ds=train_ds, valid_ds=valid_ds, test_ds=test_ds)
+        trained_model_path = train(cfg=cfg, train_ds=train_ds, valid_ds=valid_ds, test_ds=test_ds, run_idx=0)
     else:
-        trained_model_path = train(cfg=cfg, train_ds=train_ds, valid_ds=valid_ds)
+        trained_model_path = train(cfg=cfg, train_ds=train_ds, valid_ds=valid_ds, run_idx=0)
     print('[INFO] : Training complete.')
     benchmark(cfg=cfg, model_path_to_benchmark=trained_model_path, credentials=credentials)
     print('[INFO] : benchmarking complete.')
@@ -147,7 +147,7 @@ def experiment_mode(configs: DictConfig = None) -> None:
             print("[INFO] : Input shape: ", configs.training.model.input_shape)
             mlflow.log_params({"input_shape": configs.training.model.input_shape})
             mlflow.log_params({"input_length": input_lengths[i]})
-            train(cfg=configs, train_ds=train_ds, valid_ds=valid_ds, test_ds=test_ds)
+            train(cfg=configs, train_ds=train_ds, valid_ds=valid_ds, test_ds=test_ds, run_idx=input_lengths[i])
 
 def process_mode(mode: str = None,
                  configs: DictConfig = None,
@@ -174,9 +174,9 @@ def process_mode(mode: str = None,
     # Check the selected mode and perform the corresponding operation
     if mode == 'training':
         if test_ds:
-            train(cfg=configs, train_ds=train_ds, valid_ds=valid_ds, test_ds=test_ds)
+            train(cfg=configs, train_ds=train_ds, valid_ds=valid_ds, test_ds=test_ds, run_idx=0)
         else:
-            train(cfg=configs, train_ds=train_ds, valid_ds=valid_ds)
+            train(cfg=configs, train_ds=train_ds, valid_ds=valid_ds, run_idx=0)
         display_figures(configs)
         print('[INFO] : Training complete.')
     elif mode == 'experiment':

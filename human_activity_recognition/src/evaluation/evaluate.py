@@ -16,6 +16,7 @@ import mlflow
 from hydra.core.hydra_config import HydraConfig
 from omegaconf import DictConfig
 import numpy as np
+import pandas as pd
 
 warnings.filterwarnings("ignore")
 os.environ['TF_CPP_MIN_LOG_LEVEL'] = '3'
@@ -28,12 +29,50 @@ from visualize_utils import plot_confusion_matrix
 from models_mgt import get_loss
 from logs_utils import log_to_file
 
+def log_per_class_metrics(y_true, y_pred, class_names, prefix="test"):
+    # 1) Per-class PRF1 as scalar metrics (best for Compare view)
+    rpt = sklearn.metrics.classification_report(y_true, y_pred, target_names=class_names, output_dict=True)
+    for cls in class_names:
+        mlflow.log_metric(f"{prefix}/precision/{cls}", rpt[cls]["precision"])
+        mlflow.log_metric(f"{prefix}/recall/{cls}",    rpt[cls]["recall"])
+        mlflow.log_metric(f"{prefix}/f1/{cls}",        rpt[cls]["f1-score"])
+        mlflow.log_metric(f"{prefix}/support/{cls}",   rpt[cls]["support"])
+
+    # 2) Overall aggregates you’ll likely compare across runs
+    for agg in ["macro avg", "weighted avg"]:
+        mlflow.log_metric(f"{prefix}/f1_{agg.replace(' ', '_')}", rpt[agg]["f1-score"])
+        mlflow.log_metric(f"{prefix}/precision_{agg.replace(' ', '_')}", rpt[agg]["precision"])
+        mlflow.log_metric(f"{prefix}/recall_{agg.replace(' ', '_')}", rpt[agg]["recall"])
+
+    # 3) (Optional) Normalized confusion-matrix cells as metrics for deep diffs
+    cm = sklearn.metrics.confusion_matrix(y_true, y_pred, labels=np.arange(len(class_names)))
+    row_sums = cm.sum(axis=1, keepdims=True).clip(min=1)
+    cm_norm = cm / row_sums
+    for i, ti in enumerate(class_names):
+        for j, pj in enumerate(class_names):
+            mlflow.log_metric(f"{prefix}/cm/{ti}-{pj}", float(cm_norm[i, j]))
+
+# def log_confusion_matrix_to_mlflow(labels: np.ndarray, logits: np.ndarray, name_ds: str):
+    # # after you've built `labels` and `logits` (int class ids) in compute_confusion_matrix():
+    # eval_df = pd.DataFrame({"label": labels, "prediction": logits})
+
+    # dataset = mlflow.data.from_pandas(
+        # eval_df, targets="label", predictions="prediction", name=f"{name_ds}_preds"
+    # )
+
+    # mlflow.evaluate(                 # creates CM image + table + standard classifier metrics
+        # data=dataset,
+        # model_type="classifier",
+        # evaluators=["default"],
+    # )
+
+    # log_per_class_metrics(labels, logits, class_names, prefix=f"{name_ds}")
 
 def evaluate_h5_model(model_path: str = None,
                       eval_ds: tf.data.Dataset = None,
                       class_names: list = None,
                       output_dir: str = None,
-                      name_ds: Optional[str] = 'test_set') -> float:
+                      name_ds: str = 'test_set') -> float:
     """
     Evaluates a trained Keras model saved in .h5 format on the provided test data.
 
@@ -57,7 +96,7 @@ def evaluate_h5_model(model_path: str = None,
     loss, accuracy = model.evaluate(eval_ds)
 
     # Calculate the confusion matrix.
-    cm, test_accuracy = compute_confusion_matrix(test_set=eval_ds, model=model)
+    cm, test_accuracy, labels, logits = compute_confusion_matrix(test_set=eval_ds, model=model)
     ##########################################
     # Log the confusion matrix as an image summary.
     model_name = f"float_model_confusion_matrix_{name_ds}"
@@ -70,6 +109,10 @@ def evaluate_h5_model(model_path: str = None,
     log_to_file(output_dir, f"Float model {name_ds}:")
     log_to_file(output_dir, f"Accuracy of float model : {test_accuracy} %")
     log_to_file(output_dir, f"Loss of float model : {round(loss,2)} ")
+
+    log_per_class_metrics(labels, logits, class_names, prefix=name_ds)
+
+    mlflow.log_artifact(f"{output_dir}/float_model_confusion_matrix_{name_ds}.png")
 
     return accuracy
 

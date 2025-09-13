@@ -21,7 +21,6 @@ import onnxruntime
 import mlflow
 from logs_utils import log_to_file
 
-
 def ai_interp_input_quant(ai_interp, data: np.array, data_scale: float, data_offset: float, file_extension: str):
     ai_runner_input_details = ai_interp.get_inputs()[0]  # input
     if ai_runner_input_details.dtype in [np.uint8, np.int8]:
@@ -412,7 +411,7 @@ def tf_dataset_to_np_array(input_ds, nchw=True, labels_included=True):
     return batch_data, batch_labels
 
 
-def compute_confusion_matrix(test_set: tf.data.Dataset = None, model: Model = None) -> Tuple[np.ndarray, np.float32]:
+def compute_confusion_matrix(test_set: tf.data.Dataset = None, model: Model = None) -> Tuple[np.ndarray, np.float32, np.ndarray, np.ndarray]:
     """
     Computes the confusion matrix and logs it as an image summary.
 
@@ -420,7 +419,7 @@ def compute_confusion_matrix(test_set: tf.data.Dataset = None, model: Model = No
         test_set (tf.data.Dataset): The test dataset to evaluate the model on.
         model (tf.keras.models.Model): The trained model to evaluate.
     Returns:
-        confusion_matrix and accuracy
+        confusion_matrix and accuracy and labels and logits
     """
     test_pred = []
     test_labels = []
@@ -443,4 +442,4 @@ def compute_confusion_matrix(test_set: tf.data.Dataset = None, model: Model = No
 
     # Calculate the confusion matrix.
     cm = sklearn.metrics.confusion_matrix(labels, logits)
-    return cm, test_accuracy
+    return cm, test_accuracy, labels, logits
