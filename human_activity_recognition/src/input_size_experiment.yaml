@@ -28,6 +28,8 @@ dataset:
 preprocessing:
   gravity_rot_sup: True
   normalization: False
+  gaussian_noise: True
+  gaussian_std: 0.2 # m/s^2
 
 training:
   model:
