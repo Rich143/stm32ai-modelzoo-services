@@ -130,8 +130,11 @@ def log_gaussian_noise_mlflow(cfg):
         mlflow.log_params({"gaussian_noise": False})
         mlflow.log_params({"gaussian_std": 0})
 
-def experiment_mode(configs: DictConfig = None) -> None:
-    params_config = configs.experiment.experiment_params
+def get_experiment_params(cfg: DictConfig = None):
+    if cfg.experiment.experiment_params is None:
+        raise ValueError("experiment_params is None")
+
+    params_config = cfg.experiment.experiment_params
 
     if params_config.input_len_sweep_start is None:
         raise ValueError("input_len_sweep_start is None")
@@ -143,6 +146,30 @@ def experiment_mode(configs: DictConfig = None) -> None:
     input_len_start = params_config.input_len_sweep_start
     input_len_end = params_config.input_len_sweep_end
     input_len_step = params_config.input_len_sweep_step
+
+    return input_len_start, input_len_end, input_len_step
+
+def child_run(input_shape: tuple,
+              configs: DictConfig,
+              train_ds: tf.data.Dataset,
+              valid_ds: tf.data.Dataset,
+              test_ds: tf.data.Dataset) -> None:
+    configs.training.model.input_shape = input_shape
+
+    input_len = input_shape[0]
+
+    print("[INFO] : Input shape: ", configs.training.model.input_shape)
+    mlflow.log_params({"input_shape": configs.training.model.input_shape})
+    mlflow.log_params({"input_length": input_len})
+
+    log_gaussian_noise_mlflow(cfg=configs)
+
+    mlflow.log_params({"seed": configs.dataset.seed})
+
+    train(cfg=configs, train_ds=train_ds, valid_ds=valid_ds, test_ds=test_ds, run_idx=input_len)
+
+def experiment_mode(configs: DictConfig = None) -> None:
+    input_len_start, input_len_end, input_len_step = get_experiment_params(cfg=configs)
 
     input_lengths = [i for i in range(input_len_start, input_len_end, input_len_step)]
 
@@ -166,19 +193,7 @@ def experiment_mode(configs: DictConfig = None) -> None:
 
     for i in range (len(input_shapes)):
         with mlflow.start_run(run_name=f"Input Shape: {input_shapes[i]}", nested=True):
-            configs.training.model.input_shape = input_shapes[i]
-
-            train_ds, valid_ds, test_ds = datasets[i]
-
-            print("[INFO] : Input shape: ", configs.training.model.input_shape)
-            mlflow.log_params({"input_shape": configs.training.model.input_shape})
-            mlflow.log_params({"input_length": input_lengths[i]})
-
-            log_gaussian_noise_mlflow(cfg=configs)
-
-            mlflow.log_params({"seed": configs.dataset.seed})
-
-            train(cfg=configs, train_ds=train_ds, valid_ds=valid_ds, test_ds=test_ds, run_idx=input_lengths[i])
+            child_run(input_shape=input_shapes[i], configs=configs, train_ds=datasets[i][0], valid_ds=datasets[i][1], test_ds=datasets[i][2])
 
 def process_mode(mode: str = None,
                  configs: DictConfig = None,
