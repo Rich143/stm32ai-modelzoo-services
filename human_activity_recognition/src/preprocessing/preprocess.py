@@ -28,7 +28,7 @@ def load_and_filter_dataset_from_config(cfg: DictConfig = None) -> Tuple:
 
 
 def train_test_split_pandas_df(dataset: pd.DataFrame, test_split: float, seed: int) -> Tuple[pd.DataFrame, pd.DataFrame]:
-    segment_ids = dataset['segment_id']
+    segment_ids = dataset['segment_id'].unique()
 
     train_ids, test_ids = train_test_split(segment_ids, test_size=test_split, random_state=seed, shuffle=True)
 

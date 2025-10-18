@@ -507,8 +507,6 @@ def segment_and_get_labels(dataset: pd.DataFrame, class_names: List[str], seq_le
     segments, labels = get_data_segments(dataset=dataset,
                                          seq_len=seq_len)
 
-    print("[INFO] Unique labels in segments: ", np.unique(labels))
-
     # one-hot encode labels, convert from id to name first so that the order is
     # defined based on the config file
     labels = to_categorical([class_names.index(class_id_to_name(label))
