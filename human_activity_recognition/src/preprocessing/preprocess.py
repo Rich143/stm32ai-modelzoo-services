@@ -15,6 +15,7 @@ import os
 from models_utils import get_model_name_and_its_input_shape
 from data_loader import load_dataset, load_and_filter_dataset, segment_dataset
 import pandas as pd
+from sklearn.model_selection import train_test_split
 
 def load_and_filter_dataset_from_config(cfg: DictConfig = None) -> Tuple:
     dataset = load_and_filter_dataset(dataset_name=cfg.dataset.name,
@@ -25,7 +26,23 @@ def load_and_filter_dataset_from_config(cfg: DictConfig = None) -> Tuple:
 
     return dataset
 
-def segment_dataset_from_config(dataset: pd.DataFrame, cfg: DictConfig = None) -> Tuple:
+
+def train_test_split_pandas_df(dataset: pd.DataFrame, test_split: float, seed: int) -> Tuple[pd.DataFrame, pd.DataFrame]:
+    segment_ids = dataset['segment_id']
+
+    train_ids, test_ids = train_test_split(segment_ids, test_size=test_split, random_state=seed, shuffle=True)
+
+    train_dataset = dataset[dataset['segment_id'].isin(train_ids).copy()]
+    test_dataset = dataset[dataset['segment_id'].isin(test_ids).copy()]
+
+    train_dataset = train_dataset.reset_index(drop=True)
+    test_dataset = test_dataset.reset_index(drop=True)
+
+    return train_dataset, test_dataset
+
+def segment_dataset_from_config(dataset: pd.DataFrame,
+                                test_dataset: pd.DataFrame | None = None,
+                                cfg: DictConfig = None) -> Tuple:
     # Get the model input shape
     if cfg.general.model_path:
         _, input_shape = get_model_name_and_its_input_shape(cfg.general.model_path)
@@ -40,6 +57,7 @@ def segment_dataset_from_config(dataset: pd.DataFrame, cfg: DictConfig = None) -
     batch_size = cfg.training.batch_size
     train_ds, valid_ds, test_ds = segment_dataset(dataset_name=cfg.dataset.name,
                                                   dataset=dataset,
+                                                  test_dataset=test_dataset,
                                                   validation_split=cfg.dataset.validation_split,
                                                   test_split=cfg.dataset.test_split,
                                                   class_names=cfg.dataset.class_names,

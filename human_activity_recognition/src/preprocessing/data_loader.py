@@ -481,7 +481,7 @@ def load_pamap2_and_filter(dataset_path: str,
                               mean_group_delay=270)
 
     # removing the columns for time stamp and rearranging remaining columns
-    dataset = dataset[['x', 'y', 'z', 'Activity_Label']]
+    dataset = dataset[['Arrival_Time', 'x', 'y', 'z', 'Activity_Label', 'segment_id']]
 
 
     print("Dataset stats:")
@@ -500,6 +500,22 @@ def make_add_gaussian_noise_seeded(noise_std, seed):
 
     return add_gaussian_noise_seeded
 
+def segment_and_get_labels(dataset: pd.DataFrame, class_names: List[str], seq_len: int):
+    # removing the columns for time stamp and rearranging remaining columns
+    dataset = dataset[['x', 'y', 'z', 'Activity_Label']]
+
+    segments, labels = get_data_segments(dataset=dataset,
+                                         seq_len=seq_len)
+
+    print("[INFO] Unique labels in segments: ", np.unique(labels))
+
+    # one-hot encode labels, convert from id to name first so that the order is
+    # defined based on the config file
+    labels = to_categorical([class_names.index(class_id_to_name(label))
+                            for label in labels], num_classes=len(class_names))
+
+    return segments, labels
+
 def segment_pamap2_dataset(dataset: pd.DataFrame,
                            class_names: List[str],
                            input_shape: Tuple,
@@ -507,6 +523,7 @@ def segment_pamap2_dataset(dataset: pd.DataFrame,
                            test_split: float,
                            seed: int,
                            batch_size: int,
+                           test_dataset: pd.DataFrame | None = None,
                            gaussian_noise: bool = False,
                            gaussian_std: float = 0,
                            to_cache: bool = False):
@@ -514,21 +531,25 @@ def segment_pamap2_dataset(dataset: pd.DataFrame,
     Segments the pamap2 dataset into training, validation and test sets.
     """
 
-    # removing the columns for time stamp and rearranging remaining columns
-    dataset = dataset[['x', 'y', 'z', 'Activity_Label']]
-    segments, labels = get_data_segments(dataset=dataset,
-                                         seq_len=input_shape[0])
+    segments, labels = segment_and_get_labels(dataset, class_names, input_shape[0])
 
-    # one-hot encode labels, convert from id to name first so that the order is
-    # defined based on the config file
-    labels = to_categorical([class_names.index(class_id_to_name(label))
-                            for label in labels], num_classes=len(class_names))
+    if test_dataset is None:
+        # split data into train and test
+        train_x, test_x, train_y, test_y = train_test_split(segments, labels,
+                                                            test_size=test_split,
+                                                            shuffle=True,
+                                                            random_state=seed)
+    else:
+        print("[INFO] Using test dataset provided")
+        print("[INFO] Training dataset size is {}".format(len(dataset)))
+        print("[INFO] Test dataset size is {}".format(len(test_dataset)))
 
-    # split data into train and test
-    train_x, test_x, train_y, test_y = train_test_split(segments, labels,
-                                                        test_size=test_split,
-                                                        shuffle=True,
-                                                        random_state=seed)
+        test_segments, test_labels = segment_and_get_labels(test_dataset, class_names, input_shape[0])
+
+        test_x, test_y = test_segments, test_labels
+        train_x, train_y = segments, labels
+
+
     # split data into train and valid
     train_x, valid_x, train_y, valid_y = train_test_split(train_x, train_y,
                                                           test_size=val_split,
@@ -593,84 +614,86 @@ def load_pamap2(dataset_path: str,
     Loads the pamap2 dataset and return two TensorFlow datasets for training and validation.
     """
 
-    dataset = load_pamap2_from_file_and_segment(dataset_path)
+    raise NotImplementedError
 
-    # Use the chest accelerometer data
-    dataset = copy_accel_to_xyz(dataset, source='chest')
+    # dataset = load_pamap2_from_file_and_segment(dataset_path)
 
-    # Remove the ankle and hand data
-    dataset = dataset.drop(['hand_acc16_x', 'hand_acc16_y', 'hand_acc16_z', 'ankle_acc16_x', 'ankle_acc16_y', 'ankle_acc16_z'], axis=1)
+    # # Use the chest accelerometer data
+    # dataset = copy_accel_to_xyz(dataset, source='chest')
 
-    # Fill NaNs via linear interpolation
-    dataset = fill_nans(dataset)
+    # # Remove the ankle and hand data
+    # dataset = dataset.drop(['hand_acc16_x', 'hand_acc16_y', 'hand_acc16_z', 'ankle_acc16_x', 'ankle_acc16_y', 'ankle_acc16_z'], axis=1)
 
-    # Group activities
-    group_activity_ids(dataset)
+    # # Fill NaNs via linear interpolation
+    # dataset = fill_nans(dataset)
 
-    # Keep only activities of interest
-    activities_of_interest = [class_name_to_id(activity) for activity in class_names]
-    dataset = dataset[dataset["Activity_Label"].isin(activities_of_interest)]
+    # # Group activities
+    # group_activity_ids(dataset)
 
-    # Preprocess Dataset
-    dataset = preprocess_data(dataset,
-                              gravity_rot_sup,
-                              normalization,
-                              fs=100,
-                              mean_group_delay=270)
+    # # Keep only activities of interest
+    # activities_of_interest = [class_name_to_id(activity) for activity in class_names]
+    # dataset = dataset[dataset["Activity_Label"].isin(activities_of_interest)]
 
-    # removing the columns for time stamp and rearranging remaining columns
-    dataset = dataset[['x', 'y', 'z', 'Activity_Label']]
-    segments, labels = get_data_segments(dataset=dataset,
-                                         seq_len=input_shape[0])
+    # # Preprocess Dataset
+    # dataset = preprocess_data(dataset,
+                              # gravity_rot_sup,
+                              # normalization,
+                              # fs=100,
+                              # mean_group_delay=270)
 
-    # one-hot encode labels, convert from id to name first so that the order is
-    # defined based on the config file
-    labels = to_categorical([class_names.index(class_id_to_name(label))
-                            for label in labels], num_classes=len(class_names))
+    # # removing the columns for time stamp and rearranging remaining columns
+    # dataset = dataset[['x', 'y', 'z', 'Activity_Label']]
+    # segments, labels = get_data_segments(dataset=dataset,
+                                         # seq_len=input_shape[0])
 
-    # split data into train and test
-    train_x, test_x, train_y, test_y = train_test_split(segments, labels,
-                                                        test_size=test_split,
-                                                        shuffle=True,
-                                                        random_state=seed)
-    # split data into train and valid
-    train_x, valid_x, train_y, valid_y = train_test_split(train_x, train_y,
-                                                          test_size=val_split,
-                                                          shuffle=True,
-                                                          random_state=seed)
+    # # one-hot encode labels, convert from id to name first so that the order is
+    # # defined based on the config file
+    # labels = to_categorical([class_names.index(class_id_to_name(label))
+                            # for label in labels], num_classes=len(class_names))
 
-    print("Dataset stats:")
-    train_size = train_x.shape[0]
-    valid_size = valid_x.shape[0]
-    test_size = test_x.shape[0]
+    # # split data into train and test
+    # train_x, test_x, train_y, test_y = train_test_split(segments, labels,
+                                                        # test_size=test_split,
+                                                        # shuffle=True,
+                                                        # random_state=seed)
+    # # split data into train and valid
+    # train_x, valid_x, train_y, valid_y = train_test_split(train_x, train_y,
+                                                          # test_size=val_split,
+                                                          # shuffle=True,
+                                                          # random_state=seed)
 
-    print(f"Train size: {train_size}")
-    print(f"Valid size: {valid_size}")
-    print(f"Test size: {test_size}")
-    print(f"Classes: {len(class_names)}")
+    # print("Dataset stats:")
+    # train_size = train_x.shape[0]
+    # valid_size = valid_x.shape[0]
+    # test_size = test_x.shape[0]
 
-    if batch_size is None:
-        batch_size=32
+    # print(f"Train size: {train_size}")
+    # print(f"Valid size: {valid_size}")
+    # print(f"Test size: {test_size}")
+    # print(f"Classes: {len(class_names)}")
 
-    train_ds = (tf.data.Dataset.from_tensor_slices((train_x, train_y))
-                .shuffle(train_x.shape[0], reshuffle_each_iteration=True, seed=seed)
-                .batch(batch_size)
-                .repeat())
+    # if batch_size is None:
+        # batch_size=32
 
-    valid_ds = (tf.data.Dataset.from_tensor_slices((valid_x, valid_y))
-                .shuffle(valid_x.shape[0], reshuffle_each_iteration=True, seed=seed)
-                .batch(batch_size))
+    # train_ds = (tf.data.Dataset.from_tensor_slices((train_x, train_y))
+                # .shuffle(train_x.shape[0], reshuffle_each_iteration=True, seed=seed)
+                # .batch(batch_size)
+                # .repeat())
 
-    test_ds = (tf.data.Dataset.from_tensor_slices((test_x, test_y))
-               .shuffle(test_x.shape[0], reshuffle_each_iteration=True, seed=seed)
-               .batch(batch_size))
+    # valid_ds = (tf.data.Dataset.from_tensor_slices((valid_x, valid_y))
+                # .shuffle(valid_x.shape[0], reshuffle_each_iteration=True, seed=seed)
+                # .batch(batch_size))
 
-    if to_cache:
-        train_ds = train_ds.cache()
-        valid_ds = valid_ds.cache()
-        test_ds = test_ds.cache()
+    # test_ds = (tf.data.Dataset.from_tensor_slices((test_x, test_y))
+               # .shuffle(test_x.shape[0], reshuffle_each_iteration=True, seed=seed)
+               # .batch(batch_size))
 
-    return train_ds, valid_ds, test_ds
+    # if to_cache:
+        # train_ds = train_ds.cache()
+        # valid_ds = valid_ds.cache()
+        # test_ds = test_ds.cache()
+
+    # return train_ds, valid_ds, test_ds
 
 
 def load_wisdm(dataset_path: str,
@@ -832,6 +855,7 @@ def load_and_filter_dataset(dataset_name: str = None,
 
 def segment_dataset(dataset_name: str,
                     dataset: pd.DataFrame,
+                    test_dataset: pd.DataFrame | None = None,
                     validation_split: float = 0.2,
                     test_split: float = 0.2,
                     class_names: List[str] = None,
@@ -843,6 +867,7 @@ def segment_dataset(dataset_name: str,
                     to_cache: bool = False) -> Tuple[tf.data.Dataset, tf.data.Dataset, tf.data.Dataset]:
     if dataset_name == "pamap2":
         train_ds, val_ds, test_ds = segment_pamap2_dataset(dataset=dataset,
+                                                           test_dataset=test_dataset,
                                                            class_names=class_names,
                                                            input_shape=input_shape,
                                                            val_split=validation_split,

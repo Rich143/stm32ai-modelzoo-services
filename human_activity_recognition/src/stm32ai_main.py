@@ -44,7 +44,7 @@ sys.path.append(os.path.join(os.path.dirname(__file__), './models'))
 from logs_utils import mlflow_ini
 from gpu_utils import set_gpu_memory_limit
 from cfg_utils import get_random_seed
-from preprocess import preprocess, load_and_filter_dataset_from_config, segment_dataset_from_config
+from preprocess import preprocess, load_and_filter_dataset_from_config, segment_dataset_from_config, train_test_split_pandas_df
 from visualize_utils import display_figures
 from parse_config import get_config
 from train import train
@@ -79,7 +79,7 @@ def mlflow_init(cfg: DictConfig, tracking_uri: str) -> None:
     if cfg.name is None:
         raise ValueError("Experiment name is None")
 
-    print("Experiment name is: ", cfg.name)
+    print("[INFO] Experiment name is: ", cfg.name)
     mlflow.set_experiment(cfg.name)
 
     run_name = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
@@ -178,6 +178,10 @@ def experiment_mode(configs: DictConfig = None) -> None:
 
     dataset = load_and_filter_dataset_from_config(cfg=configs)
 
+    train_dataset, test_dataset = train_test_split_pandas_df(dataset=dataset,
+                                                             test_split=configs.dataset.test_split,
+                                                             seed=configs.dataset.seed)
+
     log_gaussian_noise_mlflow(cfg=configs)
 
     for input_len in input_lengths:
@@ -187,7 +191,7 @@ def experiment_mode(configs: DictConfig = None) -> None:
         print("[INFO] : Preprocessing for input shape: ", input_shape)
 
         configs.training.model.input_shape = input_shape
-        train_ds, valid_ds, test_ds = segment_dataset_from_config(cfg=configs, dataset=dataset)
+        train_ds, valid_ds, test_ds = segment_dataset_from_config(cfg=configs, dataset=train_dataset, test_dataset=test_dataset)
 
         datasets.append((train_ds, valid_ds, test_ds))
 
