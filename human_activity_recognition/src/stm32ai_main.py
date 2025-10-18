@@ -53,9 +53,10 @@ from deploy import deploy
 from common_benchmark import benchmark, cloud_connect
 from typing import Optional
 from logs_utils import log_to_file
+import pathlib
 
 
-def mlflow_init(cfg: DictConfig = None, experiment_name: str = "") -> None:
+def mlflow_init(cfg: DictConfig, tracking_uri: str) -> None:
     """
     Initializes MLflow tracking with the given configuration.
 
@@ -66,12 +67,20 @@ def mlflow_init(cfg: DictConfig = None, experiment_name: str = "") -> None:
         None
     """
 
-    if experiment_name == "":
-        experiment_name = cfg.general.project_name
+    if cfg is None:
+        raise ValueError("Config is None")
 
-    mlflow.set_tracking_uri(cfg['mlflow']['uri'])
+    if tracking_uri == "":
+        raise ValueError("Tracking URI is None")
 
-    mlflow.set_experiment(experiment_name)
+
+    mlflow.set_tracking_uri(tracking_uri)
+
+    if cfg.name is None:
+        raise ValueError("Experiment name is None")
+
+    print("Experiment name is: ", cfg.name)
+    mlflow.set_experiment(cfg.name)
 
     run_name = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
     mlflow.start_run(run_name=run_name)
@@ -80,6 +89,8 @@ def mlflow_init(cfg: DictConfig = None, experiment_name: str = "") -> None:
     mlflow.log_params(params)
 
     mlflow.tensorflow.autolog(log_models=False)
+
+    mlflow.set_tags(cfg.tags)
 
 
 def chain_tb(cfg: DictConfig = None, train_ds: tf.data.Dataset = None,
@@ -111,21 +122,36 @@ def chain_tb(cfg: DictConfig = None, train_ds: tf.data.Dataset = None,
     print('[INFO] : benchmarking complete.')
     display_figures(cfg)
 
+def log_gaussian_noise_mlflow(cfg):
+    if cfg.preprocessing.gaussian_noise:
+        mlflow.log_params({"gaussian_noise": cfg.preprocessing.gaussian_noise})
+        mlflow.log_params({"gaussian_std": cfg.preprocessing.gaussian_std})
+    else:
+        mlflow.log_params({"gaussian_noise": False})
+        mlflow.log_params({"gaussian_std": 0})
 
 def experiment_mode(configs: DictConfig = None) -> None:
-    input_lengths = [i for i in range(20, 65, 4)]
+    params_config = configs.experiment.experiment_params
+
+    if params_config.input_len_sweep_start is None:
+        raise ValueError("input_len_sweep_start is None")
+    if params_config.input_len_sweep_end is None:
+        raise ValueError("input_len_sweep_end is None")
+    if params_config.input_len_sweep_step is None:
+        raise ValueError("input_len_sweep_step is None")
+
+    input_len_start = params_config.input_len_sweep_start
+    input_len_end = params_config.input_len_sweep_end
+    input_len_step = params_config.input_len_sweep_step
+
+    input_lengths = [i for i in range(input_len_start, input_len_end, input_len_step)]
 
     datasets = []
     input_shapes = []
 
     dataset = load_and_filter_dataset_from_config(cfg=configs)
 
-    if configs.preprocessing.gaussian_noise:
-        mlflow.log_params({"gaussian_noise": configs.preprocessing.gaussian_noise})
-        mlflow.log_params({"gaussian_std": configs.preprocessing.gaussian_std})
-    else:
-        mlflow.log_params({"gaussian_noise": False})
-        mlflow.log_params({"gaussian_std": 0})
+    log_gaussian_noise_mlflow(cfg=configs)
 
     for input_len in input_lengths:
         input_shape = (input_len, 3, 1)
@@ -147,6 +173,11 @@ def experiment_mode(configs: DictConfig = None) -> None:
             print("[INFO] : Input shape: ", configs.training.model.input_shape)
             mlflow.log_params({"input_shape": configs.training.model.input_shape})
             mlflow.log_params({"input_length": input_lengths[i]})
+
+            log_gaussian_noise_mlflow(cfg=configs)
+
+            mlflow.log_params({"seed": configs.dataset.seed})
+
             train(cfg=configs, train_ds=train_ds, valid_ds=valid_ds, test_ds=test_ds, run_idx=input_lengths[i])
 
 def process_mode(mode: str = None,
@@ -252,7 +283,7 @@ def main(cfg: DictConfig) -> None:
     cfg.output_dir = HydraConfig.get().run.dir
 
     # TODO! use the config file for experiment name
-    mlflow_init(cfg, "Input size sweep")
+    mlflow_init(cfg.experiment, cfg.mlflow.uri)
 
     # Checks if there's a valid ClearML configuration file
     print(f"[INFO] : ClearML config check")
@@ -270,7 +301,7 @@ def main(cfg: DictConfig) -> None:
     print(f'[INFO] : The random seed for this simulation is {seed}')
     if seed is not None:
         tf.keras.utils.set_random_seed(seed)
-    
+
     # Extract the mode from the command-line arguments
     mode = cfg.operation_mode
     valid_modes = ['training',  'experiment', 'evaluation', 'chain_tb']

@@ -9,6 +9,19 @@ general:
   deterministic_ops: True
 
 operation_mode: experiment
+
+experiment:
+  name: "HAR_CNN_PAMAP2"
+  tags:
+    sweep_id: 092B91BE-517C-45F3-B7E1-E7E98FDD3330
+    sweep_axis: "input_len"
+    model: ign
+    study: "input_len_sweep"
+  experiment_params:
+    input_len_sweep_start: 20
+    input_len_sweep_end: 65
+    input_len_sweep_step: 4
+
 #operation_mode: training
 #choices=['benchmarking', 'deployment', 'evaluation', 'training', 'chain_tb']
 
@@ -78,7 +91,7 @@ deployment:
     board: B-U585I-IOT02A
 
 mlflow:
-  uri: ./experiments_outputs/mlruns
+  uri: http://127.0.0.1:5000
 
 hydra:
   run:

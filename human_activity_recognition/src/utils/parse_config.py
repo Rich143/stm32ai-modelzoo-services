@@ -185,7 +185,7 @@ def get_config(config_data: DictConfig) -> DefaultMunch:
         "quantization": []
     })
     mode_choices = ["training", "experiment", "evaluation", "deployment", "benchmarking", "chain_tb"]
-    legal = ["general", "operation_mode", "dataset", "preprocessing", "training",
+    legal = ["general", "operation_mode", "experiment", "dataset", "preprocessing", "training",
              "prediction", "tools", "benchmarking", "deployment", "mlflow"]
     parse_top_level(cfg,
                     mode_groups=mode_groups,
