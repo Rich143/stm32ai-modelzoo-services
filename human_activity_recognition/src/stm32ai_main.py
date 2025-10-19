@@ -13,9 +13,10 @@ import sys
 from datetime import datetime
 from hydra.core.hydra_config import HydraConfig
 import hydra
+import uuid
 import warnings
 warnings.filterwarnings("ignore")
-os.environ['TF_CPP_MIN_LOG_LEVEL'] = '3' 
+os.environ['TF_CPP_MIN_LOG_LEVEL'] = '3'
 
 import tensorflow as tf
 from omegaconf import DictConfig
@@ -92,6 +93,9 @@ def mlflow_init(cfg: DictConfig, tracking_uri: str) -> None:
 
     mlflow.set_tags(cfg.tags)
 
+    sweep_id = f"{cfg.name}_{datetime.now().strftime('%y%m%d_%H%M%S')}_{uuid.uuid4().hex[:6]}"
+    mlflow.set_tag("sweep_id", sweep_id)
+
 
 def chain_tb(cfg: DictConfig = None, train_ds: tf.data.Dataset = None,
              valid_ds: tf.data.Dataset = None, test_ds: tf.data.Dataset = None) -> None:
@@ -122,6 +126,34 @@ def chain_tb(cfg: DictConfig = None, train_ds: tf.data.Dataset = None,
     print('[INFO] : benchmarking complete.')
     display_figures(cfg)
 
+def start_child_run(run_name=None, inherit_params=True, inherit_tags=True, **kwargs):
+    parent = mlflow.active_run()
+
+    if parent is None:
+        raise ValueError("Parent run is None")
+
+    child = mlflow.start_run(run_name=run_name, nested=True, **kwargs)
+
+    if parent and (inherit_params or inherit_tags):
+        client = mlflow.tracking.MlflowClient()
+        parent_run = client.get_run(parent.info.run_id)
+
+        if inherit_params:
+            parent_params = parent_run.data.params
+            mlflow.log_params(parent_params)
+
+        if inherit_tags:
+            parent_tags = parent_run.data.tags
+
+            parent_tags = {
+                k: v for k, v in parent_run.data.tags.items()
+                if not k.startswith("mlflow.")
+            }
+
+            mlflow.set_tags(parent_tags)
+
+    return child
+
 def log_gaussian_noise_mlflow(cfg):
     if cfg.preprocessing.gaussian_noise:
         mlflow.log_params({"gaussian_noise": cfg.preprocessing.gaussian_noise})
@@ -142,14 +174,19 @@ def get_experiment_params(cfg: DictConfig = None):
         raise ValueError("input_len_sweep_end is None")
     if params_config.input_len_sweep_step is None:
         raise ValueError("input_len_sweep_step is None")
+    if params_config.num_runs_per_input_len is None:
+        raise ValueError("num_runs_per_input_len is None")
 
     input_len_start = params_config.input_len_sweep_start
     input_len_end = params_config.input_len_sweep_end
     input_len_step = params_config.input_len_sweep_step
 
-    return input_len_start, input_len_end, input_len_step
+    num_runs_per_input_len = params_config.num_runs_per_input_len
+
+    return input_len_start, input_len_end, input_len_step, num_runs_per_input_len
 
 def child_run(input_shape: tuple,
+              num_runs_per_input_len: int,
               configs: DictConfig,
               train_ds: tf.data.Dataset,
               valid_ds: tf.data.Dataset,
@@ -162,14 +199,25 @@ def child_run(input_shape: tuple,
     mlflow.log_params({"input_shape": configs.training.model.input_shape})
     mlflow.log_params({"input_length": input_len})
 
-    log_gaussian_noise_mlflow(cfg=configs)
+    base_seed = configs.dataset.seed
 
-    mlflow.log_params({"seed": configs.dataset.seed})
+    for i in range(num_runs_per_input_len):
+        with start_child_run(run_name="InputLen_{}_Run_{}".format(input_len, i),
+                             inherit_params=True,
+                             inherit_tags=True):
+            seed = base_seed + 111 * i
+            configs.dataset.seed = seed
 
-    train(cfg=configs, train_ds=train_ds, valid_ds=valid_ds, test_ds=test_ds, run_idx=input_len)
+            print("[INFO] : Run number {} for input len {}, seed {}".format(i, input_len, configs.dataset.seed))
+
+            mlflow.log_params({"seed": configs.dataset.seed})
+
+            train(cfg=configs, train_ds=train_ds, valid_ds=valid_ds, test_ds=test_ds, run_idx=input_len)
+
+    configs.dataset.seed = base_seed
 
 def experiment_mode(configs: DictConfig = None) -> None:
-    input_len_start, input_len_end, input_len_step = get_experiment_params(cfg=configs)
+    input_len_start, input_len_end, input_len_step, num_runs_per_input_len = get_experiment_params(cfg=configs)
 
     input_lengths = [i for i in range(input_len_start, input_len_end, input_len_step)]
 
@@ -196,8 +244,15 @@ def experiment_mode(configs: DictConfig = None) -> None:
         datasets.append((train_ds, valid_ds, test_ds))
 
     for i in range (len(input_shapes)):
-        with mlflow.start_run(run_name=f"Input Shape: {input_shapes[i]}", nested=True):
-            child_run(input_shape=input_shapes[i], configs=configs, train_ds=datasets[i][0], valid_ds=datasets[i][1], test_ds=datasets[i][2])
+        with start_child_run(run_name=f"Input Shape: {input_shapes[i]}",
+                             inherit_params=True,
+                             inherit_tags=True):
+            child_run(input_shape=input_shapes[i],
+                      num_runs_per_input_len=num_runs_per_input_len,
+                      configs=configs,
+                      train_ds=datasets[i][0],
+                      valid_ds=datasets[i][1],
+                      test_ds=datasets[i][2])
 
 def process_mode(mode: str = None,
                  configs: DictConfig = None,
@@ -268,7 +323,7 @@ def process_mode(mode: str = None,
 
     # ClearML - Example how to get task's context anywhere in the file.
     # Checks if there's a valid ClearML configuration file
-    if get_active_config_file() is not None: 
+    if get_active_config_file() is not None:
         print(f"[INFO] : ClearML task connection")
         task = Task.current_task()
         task.connect(configs)
@@ -311,8 +366,8 @@ def main(cfg: DictConfig) -> None:
         # ClearML - Initializing ClearML's Task object.
         task = Task.init(project_name=cfg.general.project_name,
                          task_name='har_modelzoo_task')
-        # ClearML - Optional yaml logging 
-        task.connect_configuration(name=cfg.operation_mode, 
+        # ClearML - Optional yaml logging
+        task.connect_configuration(name=cfg.operation_mode,
                                    configuration=cfg)
 
     # Seed global seed for random generators
@@ -343,7 +398,7 @@ def main(cfg: DictConfig) -> None:
                          test_ds=test_ds)
     else:
         # Process the selected mode
-        process_mode(mode=mode, 
+        process_mode(mode=mode,
                      configs=cfg)
 
 
