@@ -4,7 +4,7 @@ import matplotlib.pyplot as plt
 
 # --- user inputs ---
 experiment_name = "HAR_CNN_PAMAP2"
-sweep_id = "092B91BE-517C-45F3-B7E1-E7E98FDD3330"
+sweep_id = "HAR_CNN_PAMAP2_251019_153022_dd5a65"
 tracking_uri = "http://127.0.0.1:5000"
 
 plot_metrics_fig_1 = ["float_acc_test_set"]

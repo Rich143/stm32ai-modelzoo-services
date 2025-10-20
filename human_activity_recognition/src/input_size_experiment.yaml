@@ -18,7 +18,7 @@ experiment:
     study: "input_len_sweep"
   experiment_params:
     input_len_sweep_start: 20
-    input_len_sweep_end: 65
+    input_len_sweep_end: 101
     input_len_sweep_step: 4
     num_runs_per_input_len: 5
 

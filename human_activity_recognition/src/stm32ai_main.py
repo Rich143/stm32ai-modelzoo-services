@@ -206,7 +206,7 @@ def child_run(input_shape: tuple,
                              inherit_params=True,
                              inherit_tags=True):
             # Indicate that this run has no more children
-            mlflow.log_tag("worker_run", "true")
+            mlflow.set_tag("worker_run", "true")
 
             seed = base_seed + 111 * i
             configs.dataset.seed = seed

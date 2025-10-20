@@ -202,3 +202,4 @@ cython_debug/
 
 # MLFlow and Tensorflow
 experiments_outputs/
+mlflow/plots/
