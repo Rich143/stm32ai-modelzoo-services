@@ -361,7 +361,7 @@ def copy_accel_to_xyz(df, source='chest'):
 def fill_nans(df):
     # Interpolate to fill NaNs
     df[["x", "y", "z"]] = (
-    df.groupby("segment_id")[["x", "y", "z"]]
+    df.groupby("segment_id", group_keys=False)[["x", "y", "z"]]
     .apply(lambda group: group.interpolate())
     .reset_index(drop=True)
     )
