@@ -178,7 +178,7 @@ def get_callbacks(callbacks_dict: DictConfig, output_dir: str = None, logs_dir: 
 
 
 def train(cfg: DictConfig = None, train_ds: tf.data.Dataset = None,
-          valid_ds: tf.data.Dataset = None, test_ds: Optional[tf.data.Dataset] = None, run_idx: int = 0) -> str:
+          valid_ds: tf.data.Dataset = None, test_ds: Optional[tf.data.Dataset] = None, run_name: str = "base") -> str:
     """
     Trains the model using the provided configuration and datasets.
 
@@ -196,7 +196,7 @@ def train(cfg: DictConfig = None, train_ds: tf.data.Dataset = None,
     output_dir = HydraConfig.get().runtime.output_dir
 
     # Make a separate directory for each run
-    output_dir = os.path.join(output_dir, "run_" + str(run_idx))
+    output_dir = os.path.join(output_dir, "run_" + str(run_name))
 
     os.makedirs(output_dir, exist_ok=True)
 

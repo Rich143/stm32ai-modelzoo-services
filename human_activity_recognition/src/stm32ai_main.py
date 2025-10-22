@@ -10,10 +10,8 @@ import setuptools
 import os
 import shutil
 import sys
-from datetime import datetime
 from hydra.core.hydra_config import HydraConfig
 import hydra
-import uuid
 import warnings
 warnings.filterwarnings("ignore")
 os.environ['TF_CPP_MIN_LOG_LEVEL'] = '3'
@@ -42,10 +40,9 @@ sys.path.append(os.path.join(os.path.dirname(__file__), './evaluation'))
 sys.path.append(os.path.join(os.path.dirname(__file__), './models'))
 
 
-from logs_utils import mlflow_ini
 from gpu_utils import set_gpu_memory_limit
 from cfg_utils import get_random_seed
-from preprocess import preprocess, load_and_filter_dataset_from_config, segment_dataset_from_config, train_test_split_pandas_df
+from preprocess import preprocess
 from visualize_utils import display_figures
 from parse_config import get_config
 from train import train
@@ -54,48 +51,9 @@ from deploy import deploy
 from common_benchmark import benchmark, cloud_connect
 from typing import Optional
 from logs_utils import log_to_file
-import pathlib
-
-
-def mlflow_init(cfg: DictConfig, tracking_uri: str) -> None:
-    """
-    Initializes MLflow tracking with the given configuration.
-
-    Args:
-        cfg (dict): A dictionary containing the configuration parameters for MLflow tracking.
-
-    Returns:
-        None
-    """
-
-    if cfg is None:
-        raise ValueError("Config is None")
-
-    if tracking_uri == "":
-        raise ValueError("Tracking URI is None")
-
-
-    mlflow.set_tracking_uri(tracking_uri)
-
-    if cfg.name is None:
-        raise ValueError("Experiment name is None")
-
-    print("[INFO] Experiment name is: ", cfg.name)
-    mlflow.set_experiment(cfg.name)
-
-    run_name = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
-    mlflow.start_run(run_name=run_name)
-
-    params = {"operation_mode": cfg.operation_mode}
-    mlflow.log_params(params)
-
-    mlflow.tensorflow.autolog(log_models=False)
-
-    mlflow.set_tags(cfg.tags)
-
-    sweep_id = f"{cfg.name}_{datetime.now().strftime('%y%m%d_%H%M%S')}_{uuid.uuid4().hex[:6]}"
-    mlflow.set_tag("sweep_id", sweep_id)
-
+from experiments.experiment_utils import mlflow_init
+from experiments.input_len_sweep import input_len_experiment
+from experiments.gaussian_noise_sweep import gaussian_noise_experiment
 
 def chain_tb(cfg: DictConfig = None, train_ds: tf.data.Dataset = None,
              valid_ds: tf.data.Dataset = None, test_ds: tf.data.Dataset = None) -> None:
@@ -118,144 +76,21 @@ def chain_tb(cfg: DictConfig = None, train_ds: tf.data.Dataset = None,
         _, _, credentials = cloud_connect(stm32ai_version=cfg.tools.stm32ai.version)
 
     if test_ds:
-        trained_model_path = train(cfg=cfg, train_ds=train_ds, valid_ds=valid_ds, test_ds=test_ds, run_idx=0)
+        trained_model_path = train(cfg=cfg, train_ds=train_ds, valid_ds=valid_ds, test_ds=test_ds, run_name="base")
     else:
-        trained_model_path = train(cfg=cfg, train_ds=train_ds, valid_ds=valid_ds, run_idx=0)
+        trained_model_path = train(cfg=cfg, train_ds=train_ds, valid_ds=valid_ds, run_name="base")
     print('[INFO] : Training complete.')
     benchmark(cfg=cfg, model_path_to_benchmark=trained_model_path, credentials=credentials)
     print('[INFO] : benchmarking complete.')
     display_figures(cfg)
 
-def start_child_run(run_name=None, inherit_params=True, inherit_tags=True, **kwargs):
-    parent = mlflow.active_run()
-
-    if parent is None:
-        raise ValueError("Parent run is None")
-
-    child = mlflow.start_run(run_name=run_name, nested=True, **kwargs)
-
-    if parent and (inherit_params or inherit_tags):
-        client = mlflow.tracking.MlflowClient()
-        parent_run = client.get_run(parent.info.run_id)
-
-        if inherit_params:
-            parent_params = parent_run.data.params
-            mlflow.log_params(parent_params)
-
-        if inherit_tags:
-            parent_tags = parent_run.data.tags
-
-            parent_tags = {
-                k: v for k, v in parent_run.data.tags.items()
-                if not k.startswith("mlflow.")
-            }
-
-            mlflow.set_tags(parent_tags)
-
-    return child
-
-def log_gaussian_noise_mlflow(cfg):
-    if cfg.preprocessing.gaussian_noise:
-        mlflow.log_params({"gaussian_noise": cfg.preprocessing.gaussian_noise})
-        mlflow.log_params({"gaussian_std": cfg.preprocessing.gaussian_std})
-    else:
-        mlflow.log_params({"gaussian_noise": False})
-        mlflow.log_params({"gaussian_std": 0})
-
-def get_experiment_params(cfg: DictConfig = None):
-    if cfg.experiment.experiment_params is None:
-        raise ValueError("experiment_params is None")
-
-    params_config = cfg.experiment.experiment_params
-
-    if params_config.input_len_sweep_start is None:
-        raise ValueError("input_len_sweep_start is None")
-    if params_config.input_len_sweep_end is None:
-        raise ValueError("input_len_sweep_end is None")
-    if params_config.input_len_sweep_step is None:
-        raise ValueError("input_len_sweep_step is None")
-    if params_config.num_runs_per_input_len is None:
-        raise ValueError("num_runs_per_input_len is None")
-
-    input_len_start = params_config.input_len_sweep_start
-    input_len_end = params_config.input_len_sweep_end
-    input_len_step = params_config.input_len_sweep_step
-
-    num_runs_per_input_len = params_config.num_runs_per_input_len
-
-    return input_len_start, input_len_end, input_len_step, num_runs_per_input_len
-
-def child_run(input_shape: tuple,
-              num_runs_per_input_len: int,
-              configs: DictConfig,
-              train_ds: tf.data.Dataset,
-              valid_ds: tf.data.Dataset,
-              test_ds: tf.data.Dataset) -> None:
-    configs.training.model.input_shape = input_shape
-
-    input_len = input_shape[0]
-
-    print("[INFO] : Input shape: ", configs.training.model.input_shape)
-    mlflow.log_params({"input_shape": configs.training.model.input_shape})
-    mlflow.log_params({"input_length": input_len})
-
-    base_seed = configs.dataset.seed
-
-    for i in range(num_runs_per_input_len):
-        with start_child_run(run_name="InputLen_{}_Run_{}".format(input_len, i),
-                             inherit_params=True,
-                             inherit_tags=True):
-            # Indicate that this run has no more children
-            mlflow.set_tag("worker_run", "true")
-
-            seed = base_seed + 111 * i
-            configs.dataset.seed = seed
-
-            print("[INFO] : Run number {} for input len {}, seed {}".format(i, input_len, configs.dataset.seed))
-
-            mlflow.log_params({"seed": configs.dataset.seed})
-
-            train(cfg=configs, train_ds=train_ds, valid_ds=valid_ds, test_ds=test_ds, run_idx=input_len)
-
-    configs.dataset.seed = base_seed
-
 def experiment_mode(configs: DictConfig = None) -> None:
-    input_len_start, input_len_end, input_len_step, num_runs_per_input_len = get_experiment_params(cfg=configs)
-
-    input_lengths = [i for i in range(input_len_start, input_len_end, input_len_step)]
-
-    datasets = []
-    input_shapes = []
-
-    dataset = load_and_filter_dataset_from_config(cfg=configs)
-
-    train_dataset, test_dataset = train_test_split_pandas_df(dataset=dataset,
-                                                             test_split=configs.dataset.test_split,
-                                                             seed=configs.dataset.seed)
-
-    log_gaussian_noise_mlflow(cfg=configs)
-
-    for input_len in input_lengths:
-        input_shape = (input_len, 3, 1)
-        input_shapes.append(input_shape)
-
-        print("[INFO] : Preprocessing for input shape: ", input_shape)
-
-        configs.training.model.input_shape = input_shape
-        train_ds, valid_ds, test_ds = segment_dataset_from_config(cfg=configs, dataset=train_dataset, test_dataset=test_dataset)
-
-        datasets.append((train_ds, valid_ds, test_ds))
-
-    for i in range (len(input_shapes)):
-        with start_child_run(run_name=f"Input Shape: {input_shapes[i]}",
-                             inherit_params=True,
-                             inherit_tags=True):
-            child_run(input_shape=input_shapes[i],
-                      num_runs_per_input_len=num_runs_per_input_len,
-                      configs=configs,
-                      train_ds=datasets[i][0],
-                      valid_ds=datasets[i][1],
-                      test_ds=datasets[i][2])
+    if configs.experiment.tags.sweep_axis == "input_len":
+        input_len_experiment(configs=configs)
+    elif configs.experiment.tags.sweep_axis == "gaussian_noise":
+        gaussian_noise_experiment(configs=configs)
+    else:
+        raise ValueError("Unknown sweep axis: {}".format(configs.experiment.tags.sweep_axis))
 
 def process_mode(mode: str = None,
                  configs: DictConfig = None,
@@ -282,9 +117,9 @@ def process_mode(mode: str = None,
     # Check the selected mode and perform the corresponding operation
     if mode == 'training':
         if test_ds:
-            train(cfg=configs, train_ds=train_ds, valid_ds=valid_ds, test_ds=test_ds, run_idx=0)
+            train(cfg=configs, train_ds=train_ds, valid_ds=valid_ds, test_ds=test_ds, run_name="base")
         else:
-            train(cfg=configs, train_ds=train_ds, valid_ds=valid_ds, run_idx=0)
+            train(cfg=configs, train_ds=train_ds, valid_ds=valid_ds, run_name="base")
         display_figures(configs)
         print('[INFO] : Training complete.')
     elif mode == 'experiment':
