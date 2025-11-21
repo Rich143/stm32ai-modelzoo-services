@@ -4,9 +4,10 @@ from datetime import datetime
 import uuid
 
 from omegaconf import DictConfig
-from preprocess import load_and_filter_dataset_from_config, segment_dataset_from_config, train_test_split_pandas_df
+from preprocess import load_and_filter_dataset_from_config, segment_presplit_dataset_using_config
 from train import train
-from experiments.experiment_utils import start_child_run
+from experiments.experiment_utils import (kfold_train_val_test, start_child_run,
+                                          DatasetTriplet, SubjectListTriplet)
 
 def input_len_experiment(configs: DictConfig = None) -> None:
     input_len_start, input_len_end, input_len_step, num_runs_per_input_len = get_experiment_params(cfg=configs)
@@ -14,36 +15,39 @@ def input_len_experiment(configs: DictConfig = None) -> None:
     input_lengths = [i for i in range(input_len_start, input_len_end, input_len_step)]
 
     datasets = []
-    input_shapes = []
 
     dataset = load_and_filter_dataset_from_config(cfg=configs)
 
-    train_dataset, test_dataset = train_test_split_pandas_df(dataset=dataset,
-                                                             test_split=configs.dataset.test_split,
-                                                             seed=configs.dataset.seed)
+    train_subjects = configs.dataset.train_val_test_cv_split.train_subjects
+    cv_subjects = configs.dataset.train_val_test_cv_split.cv_subjects
+    test_subjects = configs.dataset.train_val_test_cv_split.test_subjects
+    excluded_subjects = configs.dataset.train_val_test_cv_split.excluded_subjects
+
+    seed = configs.dataset.seed
+
+    (datasets, subjects_in_folds) = kfold_train_val_test(dataset=dataset,
+                                    subject_col="User",
+                                    test_subjects=test_subjects,
+                                    always_train_subjects=train_subjects,
+                                    cv_subjects=cv_subjects,
+                                    excluded_subjects=excluded_subjects,
+                                    n_splits=num_runs_per_input_len,
+                                    random_state=seed,
+                                    shuffle=True)
 
     log_gaussian_noise_mlflow(cfg=configs)
 
-    for input_len in input_lengths:
-        input_shape = (input_len, 3, 1)
-        input_shapes.append(input_shape)
+    for i in range(len(input_lengths)):
+        input_shape = (input_lengths[i], configs.training.model.input_shape[1], configs.training.model.input_shape[2])
 
-        print("[INFO] : Preprocessing for input shape: ", input_shape)
-        configs.training.model.input_shape = input_shape
-        train_ds, valid_ds, test_ds = segment_dataset_from_config(cfg=configs, dataset=train_dataset, test_dataset=test_dataset)
-
-        datasets.append((train_ds, valid_ds, test_ds))
-
-    for i in range (len(input_shapes)):
-        with start_child_run(run_name=f"Input Shape: {input_shapes[i]}",
+        with start_child_run(run_name=f"Input Shape: {input_shape}",
                              inherit_params=True,
                              inherit_tags=True):
-            child_run(input_shape=input_shapes[i],
+            child_run(input_shape=input_shape,
                       num_runs_per_input_len=num_runs_per_input_len,
                       configs=configs,
-                      train_ds=datasets[i][0],
-                      valid_ds=datasets[i][1],
-                      test_ds=datasets[i][2])
+                      datasets=datasets,
+                      subjects_in_folds=subjects_in_folds)
 
 def log_gaussian_noise_mlflow(cfg):
     if cfg.preprocessing.gaussian_noise:
@@ -79,11 +83,9 @@ def get_experiment_params(cfg: DictConfig = None):
 def child_run(input_shape: tuple,
               num_runs_per_input_len: int,
               configs: DictConfig,
-              train_ds: tf.data.Dataset,
-              valid_ds: tf.data.Dataset,
-              test_ds: tf.data.Dataset) -> None:
+              datasets: list[DatasetTriplet],
+              subjects_in_folds: list[SubjectListTriplet]) -> None:
     configs.training.model.input_shape = input_shape
-
     input_len = input_shape[0]
 
     print("[INFO] : Input shape: ", configs.training.model.input_shape)
@@ -99,12 +101,27 @@ def child_run(input_shape: tuple,
             # Indicate that this run has no more children
             mlflow.set_tag("worker_run", "true")
 
-            seed = base_seed + 111 * i
-            configs.dataset.seed = seed
+            train_ds, valid_ds, test_ds = (
+                segment_presplit_dataset_using_config(train_ds=datasets[i][0],
+                                                      val_ds=datasets[i][1],
+                                                      test_ds=datasets[i][2],
+                                                      cfg=configs))
 
-            print("[INFO] : Run number {} for input len {}, seed {}".format(i, input_len, configs.dataset.seed))
+            subjects_in_fold = subjects_in_folds[i]
+
+            # TODO: should do multiple runs per fold with different seeds?
+            # seed = base_seed + 111 * i
+            # configs.dataset.seed = seed
+
+            print(f"[INFO] : Run number {i} for input len {input_len}")
+            print(f"[INFO] : Train subjects: {subjects_in_fold[0]}")
+            print(f"[INFO] : Validation subjects: {subjects_in_fold[1]}")
+            print(f"[INFO] : Test subjects: {subjects_in_fold[2]}")
 
             mlflow.log_params({"seed": configs.dataset.seed})
+            mlflow.log_params({"train_subjects": subjects_in_fold[0],
+                               "validation_subjects": subjects_in_fold[1],
+                               "test_subjects": subjects_in_fold[2]})
 
             train(cfg=configs, train_ds=train_ds, valid_ds=valid_ds, test_ds=test_ds, run_name=f"InputLen_{input_len}_Run_{i}")
 

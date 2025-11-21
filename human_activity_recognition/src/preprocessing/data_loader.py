@@ -480,8 +480,7 @@ def load_pamap2_and_filter(dataset_path: str,
                               fs=100,
                               mean_group_delay=270)
 
-    # removing the columns for time stamp and rearranging remaining columns
-    dataset = dataset[['Arrival_Time', 'x', 'y', 'z', 'Activity_Label', 'segment_id']]
+    dataset = dataset[['Arrival_Time', 'x', 'y', 'z', 'Activity_Label', 'segment_id', 'User']]
 
 
     print("Dataset stats:")
@@ -513,6 +512,93 @@ def segment_and_get_labels(dataset: pd.DataFrame, class_names: List[str], seq_le
                             for label in labels], num_classes=len(class_names))
 
     return segments, labels
+
+def segment_presplit_dataset(train_ds: pd.DataFrame,
+                             val_ds: pd.DataFrame,
+                             test_ds: pd.DataFrame,
+                             class_names: List[str],
+                             input_shape: Tuple,
+                             seed: int,
+                             batch_size: int,
+                             gaussian_noise: bool = False,
+                             gaussian_std: float = 0,
+                             to_cache: bool = False):
+    train_segments, train_labels = segment_and_get_labels(train_ds, class_names, input_shape[0])
+    val_segments, val_labels = segment_and_get_labels(val_ds, class_names, input_shape[0])
+    test_segments, test_labels = segment_and_get_labels(test_ds, class_names, input_shape[0])
+
+    train_x, train_y = train_segments, train_labels
+    valid_x, valid_y = val_segments, val_labels
+    test_x, test_y = test_segments, test_labels
+
+    # if test_dataset is None:
+        # # split data into train and test
+        # train_x, test_x, train_y, test_y = train_test_split(segments, labels,
+                                                            # test_size=test_split,
+                                                            # shuffle=True,
+                                                            # random_state=seed)
+    # else:
+        # print("[INFO] Using test dataset provided")
+        # print("[INFO] Training dataset size is {}".format(len(dataset)))
+        # print("[INFO] Test dataset size is {}".format(len(test_dataset)))
+
+        # test_segments, test_labels = segment_and_get_labels(test_dataset, class_names, input_shape[0])
+
+        # test_x, test_y = test_segments, test_labels
+        # train_x, train_y = segments, labels
+
+
+    # # split data into train and valid
+    # train_x, valid_x, train_y, valid_y = train_test_split(train_x, train_y,
+                                                          # test_size=val_split,
+                                                          # shuffle=True,
+                                                          # random_state=seed)
+
+    print("Dataset stats:")
+    train_size = train_x.shape[0]
+    valid_size = valid_x.shape[0]
+    test_size = test_x.shape[0]
+
+    print(f"Train size: {train_size}")
+    print(f"Valid size: {valid_size}")
+    print(f"Test size: {test_size}")
+    print(f"Classes: {len(class_names)}")
+
+    if batch_size is None:
+        batch_size=32
+
+    # train_ds = (tf.data.Dataset.from_tensor_slices((train_x, train_y))
+                # .shuffle(train_x.shape[0], reshuffle_each_iteration=True, seed=seed)
+                # .batch(batch_size))
+    train_ds = tf.data.Dataset.from_tensor_slices((train_x, train_y))
+    valid_ds = tf.data.Dataset.from_tensor_slices((valid_x, valid_y))
+    test_ds = tf.data.Dataset.from_tensor_slices((test_x, test_y))
+
+    if to_cache:
+        train_ds = train_ds.cache()
+        valid_ds = valid_ds.cache()
+        test_ds = test_ds.cache()
+
+    train_ds = (train_ds.shuffle(train_x.shape[0], reshuffle_each_iteration=True, seed=seed)
+                .repeat())
+
+    if gaussian_noise:
+        train_ds = train_ds.map(make_add_gaussian_noise_seeded(gaussian_std, seed), num_parallel_calls=tf.data.AUTOTUNE)
+        mlflow.log_params({"gaussian_noise": True})
+        mlflow.log_params({"gaussian_std": gaussian_std})
+    else:
+        mlflow.log_params({"gaussian_noise": False})
+        mlflow.log_params({"gaussian_std": 0})
+
+
+    train_ds = (train_ds.batch(batch_size)
+                .prefetch(tf.data.AUTOTUNE))
+
+    valid_ds = valid_ds.batch(batch_size).prefetch(tf.data.AUTOTUNE)
+
+    test_ds = test_ds.batch(batch_size).prefetch(tf.data.AUTOTUNE)
+
+    return train_ds, valid_ds, test_ds
 
 def segment_pamap2_dataset(dataset: pd.DataFrame,
                            class_names: List[str],

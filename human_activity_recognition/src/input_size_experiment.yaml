@@ -20,6 +20,7 @@ experiment:
     input_len_sweep_start: 20
     input_len_sweep_end: 101
     input_len_sweep_step: 4
+    k_fold_validation: True # [True, False]
     num_runs_per_input_len: 5
 
 #operation_mode: training
@@ -33,9 +34,11 @@ dataset:
 
   training_path: ../datasets/PAMAP2_Dataset  # Mandatory for all but deployment, and benchmarking
   validation_path: # ../datasets/mobility_v1/train.pkl      # Optional
-  validation_split: 0.2   # Optional, default value is 0.2
-  test_path: 
-  test_split: 0.25      # Optional, default value is 0.25
+  train_val_test_cv_split:
+    test_subjects: [108,]
+    train_subjects: [103, 104,] # Subjects to always be used for training
+    cv_subjects: [101, 102, 105, 106, 107] # Subjects to be used for training / validation (k_fold)
+    excluded_subjects: []
   seed: 123               # Optional, there is a default seed
 
 preprocessing:

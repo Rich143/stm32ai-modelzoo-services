@@ -8,14 +8,16 @@
 #  *--------------------------------------------------------------------------------------------*/
 
 from omegaconf import DictConfig
-from typing import Tuple
+from typing import Tuple, TypeAlias, Any
 import sys
 import os
 
 from models_utils import get_model_name_and_its_input_shape
 from data_loader import load_dataset, load_and_filter_dataset, segment_dataset
+from data_loader import segment_presplit_dataset
 import pandas as pd
 from sklearn.model_selection import train_test_split
+import tensorflow as tf
 
 def load_and_filter_dataset_from_config(cfg: DictConfig = None) -> Tuple:
     dataset = load_and_filter_dataset(dataset_name=cfg.dataset.name,
@@ -27,18 +29,27 @@ def load_and_filter_dataset_from_config(cfg: DictConfig = None) -> Tuple:
     return dataset
 
 
-def train_test_split_pandas_df(dataset: pd.DataFrame, test_split: float, seed: int) -> Tuple[pd.DataFrame, pd.DataFrame]:
-    segment_ids = dataset['segment_id'].unique()
+ds: TypeAlias = tf.data.Dataset[Any]
 
-    train_ids, test_ids = train_test_split(segment_ids, test_size=test_split, random_state=seed, shuffle=True)
+def segment_presplit_dataset_using_config(train_ds: pd.DataFrame,
+                                          val_ds: pd.DataFrame,
+                                          test_ds: pd.DataFrame,
+                                          cfg: DictConfig,
+                                          to_cache: bool = False,
+) -> Tuple[ds, ds, ds]:
+    return segment_presplit_dataset(
+        train_ds=train_ds,
+        val_ds=val_ds,
+        test_ds=test_ds,
+        class_names=cfg.dataset.class_names,
+        input_shape=cfg.training.model.input_shape,
+        seed=cfg.dataset.seed,
+        batch_size=cfg.training.batch_size,
+        gaussian_noise=cfg.preprocessing.gaussian_noise,
+        gaussian_std=cfg.preprocessing.gaussian_std,
+        to_cache=to_cache
+    )
 
-    train_dataset = dataset[dataset['segment_id'].isin(train_ids).copy()]
-    test_dataset = dataset[dataset['segment_id'].isin(test_ids).copy()]
-
-    train_dataset = train_dataset.reset_index(drop=True)
-    test_dataset = test_dataset.reset_index(drop=True)
-
-    return train_dataset, test_dataset
 
 def segment_dataset_from_config(dataset: pd.DataFrame,
                                 test_dataset: pd.DataFrame | None = None,

@@ -32,7 +32,7 @@ def parse_dataset_section(cfg: DictConfig, mode: str = None, mode_groups: DictCo
     '''
 
     legal = ["name", "class_names", "training_path", "validation_path",
-             "validation_split", "test_path", "test_split", "seed"]
+             "validation_split", "test_path", "test_split", "seed", "train_val_test_cv_split"]
 
     required = []
     one_or_more = []
