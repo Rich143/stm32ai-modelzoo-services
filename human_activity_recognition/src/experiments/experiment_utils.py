@@ -64,7 +64,6 @@ def start_child_run(run_name=None, inherit_params=True, inherit_tags=True, **kwa
 
         if inherit_params:
             parent_params = parent_run.data.params
-            print("parent_params: ", parent_params)
             mlflow.log_params(parent_params)
 
         if inherit_tags:

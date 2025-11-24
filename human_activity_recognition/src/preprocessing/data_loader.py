@@ -14,7 +14,7 @@ from scipy.signal import butter
 from sklearn.model_selection import train_test_split
 import numpy as np
 import tensorflow as tf
-from typing import Tuple, List
+from typing import Tuple, List, TypeAlias
 import pandas as pd
 from tqdm import tqdm
 from tensorflow.keras.utils import to_categorical
@@ -490,16 +490,48 @@ def load_pamap2_and_filter(dataset_path: str,
     return dataset
 
 
-def make_add_gaussian_noise_seeded(noise_std, seed):
-    g = tf.random.Generator.from_seed(seed)
+class NoiseConfig:
+    def __init__(self, noise_std: float, seed: int):
+        # holds the current epoch number
+        self.epoch = tf.Variable(0, dtype=tf.int64, trainable=False)
 
-    def add_gaussian_noise_seeded(x, y):
-        noise = g.normal(tf.shape(x), stddev=noise_std, dtype=x.dtype)
+        self.noise_std = noise_std
+        self.seed = seed
+
+class UpdateEpoch(tf.keras.callbacks.Callback):
+    def __init__(self, cfg: NoiseConfig):
+        super().__init__()
+        self.cfg = cfg
+
+    def on_epoch_begin(self, epoch, logs=None):
+        # assign epoch to the tf.Variable
+        self.cfg.epoch.assign(epoch)
+
+def make_stateless_noise_fn(cfg: NoiseConfig):
+    def add_noise(batch_idx, batch):
+        x, y = batch
+
+        base_seed = tf.constant([cfg.seed, 0], dtype=tf.int32)
+
+        # seed = fold(global_seed, epoch)
+        seed1 = tf.random.experimental.stateless_fold_in(base_seed, cfg.epoch)
+
+        # seed = fold(seed1, batch_idx)
+        final_seed = tf.random.experimental.stateless_fold_in(seed1, batch_idx)
+
+        noise = tf.random.stateless_normal(
+            shape=tf.shape(x),
+            seed=final_seed,
+            stddev=cfg.noise_std,
+            dtype=x.dtype,
+        )
         return x + noise, y
 
-    return add_gaussian_noise_seeded
+    return add_noise
 
-def segment_and_get_labels(dataset: pd.DataFrame, class_names: List[str], seq_len: int):
+def segment_and_get_labels(dataset: pd.DataFrame,
+                           class_names: List[str],
+                           seq_len: int):
     # removing the columns for time stamp and rearranging remaining columns
     dataset = dataset[['x', 'y', 'z', 'Activity_Label']]
 
@@ -513,6 +545,51 @@ def segment_and_get_labels(dataset: pd.DataFrame, class_names: List[str], seq_le
 
     return segments, labels
 
+CallbackList: TypeAlias = List[tf.keras.callbacks.Callback]
+
+def build_train_ds(train_x: np.ndarray,
+                   train_y: np.ndarray,
+                   batch_size: int,
+                   seed: int,
+                   gaussian_noise: bool = False,
+                   gaussian_std: float = 0,
+                   to_cache: bool = False
+                  ) -> Tuple[
+                      tf.data.Dataset,
+                      CallbackList
+                  ]:
+    train_ds = tf.data.Dataset.from_tensor_slices((train_x, train_y))
+
+    if to_cache:
+        train_ds = train_ds.cache()
+
+    train_ds = (train_ds.shuffle(train_x.shape[0],
+                                 reshuffle_each_iteration=True,
+                                 seed=seed)
+                .repeat()
+                .batch(batch_size))
+
+    callbacks = []
+
+    if gaussian_noise:
+        noise_cfg = NoiseConfig(gaussian_std, seed)
+
+        callbacks.append(UpdateEpoch(noise_cfg))
+
+        # Adds in a batch idx to use with the stateless random number generator
+        train_ds = train_ds.enumerate()
+        train_ds = train_ds.map(make_stateless_noise_fn(noise_cfg),
+                                num_parallel_calls=tf.data.AUTOTUNE)
+        mlflow.log_params({"gaussian_noise": True})
+        mlflow.log_params({"gaussian_std": gaussian_std})
+    else:
+        mlflow.log_params({"gaussian_noise": False})
+        mlflow.log_params({"gaussian_std": 0})
+
+    train_ds = train_ds.prefetch(tf.data.AUTOTUNE)
+
+    return train_ds, callbacks
+
 def segment_presplit_dataset(train_ds: pd.DataFrame,
                              val_ds: pd.DataFrame,
                              test_ds: pd.DataFrame,
@@ -522,37 +599,26 @@ def segment_presplit_dataset(train_ds: pd.DataFrame,
                              batch_size: int,
                              gaussian_noise: bool = False,
                              gaussian_std: float = 0,
-                             to_cache: bool = False):
-    train_segments, train_labels = segment_and_get_labels(train_ds, class_names, input_shape[0])
-    val_segments, val_labels = segment_and_get_labels(val_ds, class_names, input_shape[0])
-    test_segments, test_labels = segment_and_get_labels(test_ds, class_names, input_shape[0])
+                             to_cache: bool = False
+                            ) -> Tuple[
+                                tf.data.Dataset,
+                                tf.data.Dataset,
+                                tf.data.Dataset,
+                                CallbackList,
+                            ]:
+    train_segments, train_labels = segment_and_get_labels(train_ds,
+                                                          class_names,
+                                                          input_shape[0])
+    val_segments, val_labels = segment_and_get_labels(val_ds,
+                                                      class_names,
+                                                      input_shape[0])
+    test_segments, test_labels = segment_and_get_labels(test_ds,
+                                                        class_names,
+                                                        input_shape[0])
 
     train_x, train_y = train_segments, train_labels
     valid_x, valid_y = val_segments, val_labels
     test_x, test_y = test_segments, test_labels
-
-    # if test_dataset is None:
-        # # split data into train and test
-        # train_x, test_x, train_y, test_y = train_test_split(segments, labels,
-                                                            # test_size=test_split,
-                                                            # shuffle=True,
-                                                            # random_state=seed)
-    # else:
-        # print("[INFO] Using test dataset provided")
-        # print("[INFO] Training dataset size is {}".format(len(dataset)))
-        # print("[INFO] Test dataset size is {}".format(len(test_dataset)))
-
-        # test_segments, test_labels = segment_and_get_labels(test_dataset, class_names, input_shape[0])
-
-        # test_x, test_y = test_segments, test_labels
-        # train_x, train_y = segments, labels
-
-
-    # # split data into train and valid
-    # train_x, valid_x, train_y, valid_y = train_test_split(train_x, train_y,
-                                                          # test_size=val_split,
-                                                          # shuffle=True,
-                                                          # random_state=seed)
 
     print("Dataset stats:")
     train_size = train_x.shape[0]
@@ -567,38 +633,26 @@ def segment_presplit_dataset(train_ds: pd.DataFrame,
     if batch_size is None:
         batch_size=32
 
-    # train_ds = (tf.data.Dataset.from_tensor_slices((train_x, train_y))
-                # .shuffle(train_x.shape[0], reshuffle_each_iteration=True, seed=seed)
-                # .batch(batch_size))
-    train_ds = tf.data.Dataset.from_tensor_slices((train_x, train_y))
+    mlflow.log_param("batch_size_actual", batch_size)
+    train_ds, callbacks = build_train_ds(train_x=train_x,
+                              train_y=train_y,
+                              batch_size=batch_size,
+                              seed=seed,
+                              gaussian_noise=gaussian_noise,
+                              gaussian_std=gaussian_std,
+                              to_cache=to_cache)
+
     valid_ds = tf.data.Dataset.from_tensor_slices((valid_x, valid_y))
     test_ds = tf.data.Dataset.from_tensor_slices((test_x, test_y))
 
     if to_cache:
-        train_ds = train_ds.cache()
         valid_ds = valid_ds.cache()
         test_ds = test_ds.cache()
 
-    train_ds = (train_ds.shuffle(train_x.shape[0], reshuffle_each_iteration=True, seed=seed)
-                .repeat())
-
-    if gaussian_noise:
-        train_ds = train_ds.map(make_add_gaussian_noise_seeded(gaussian_std, seed), num_parallel_calls=tf.data.AUTOTUNE)
-        mlflow.log_params({"gaussian_noise": True})
-        mlflow.log_params({"gaussian_std": gaussian_std})
-    else:
-        mlflow.log_params({"gaussian_noise": False})
-        mlflow.log_params({"gaussian_std": 0})
-
-
-    train_ds = (train_ds.batch(batch_size)
-                .prefetch(tf.data.AUTOTUNE))
-
     valid_ds = valid_ds.batch(batch_size).prefetch(tf.data.AUTOTUNE)
-
     test_ds = test_ds.batch(batch_size).prefetch(tf.data.AUTOTUNE)
 
-    return train_ds, valid_ds, test_ds
+    return train_ds, valid_ds, test_ds, callbacks
 
 def segment_pamap2_dataset(dataset: pd.DataFrame,
                            class_names: List[str],

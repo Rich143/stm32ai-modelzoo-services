@@ -9,6 +9,20 @@ from train import train
 from experiments.experiment_utils import (kfold_train_val_test, start_child_run,
                                           DatasetTriplet, SubjectListTriplet)
 
+def set_mlflow_tags(train_subjects, cv_subjects, test_subjects, excluded_subjects,
+                   input_len_start, input_len_end, input_len_step, num_runs_per_input_len):
+    mlflow.set_tags({
+        "train_subjects": train_subjects,
+        "cv_subjects": cv_subjects,
+        "test_subjects": test_subjects,
+        "excluded_subjects": excluded_subjects,
+        "input_len_start": input_len_start,
+        "input_len_end": input_len_end,
+        "input_len_step": input_len_step,
+        "num_runs_per_input_len": num_runs_per_input_len,
+        "kfold": True
+    })
+
 def input_len_experiment(configs: DictConfig = None) -> None:
     input_len_start, input_len_end, input_len_step, num_runs_per_input_len = get_experiment_params(cfg=configs)
 
@@ -18,12 +32,20 @@ def input_len_experiment(configs: DictConfig = None) -> None:
 
     dataset = load_and_filter_dataset_from_config(cfg=configs)
 
-    train_subjects = configs.dataset.train_val_test_cv_split.train_subjects
-    cv_subjects = configs.dataset.train_val_test_cv_split.cv_subjects
-    test_subjects = configs.dataset.train_val_test_cv_split.test_subjects
-    excluded_subjects = configs.dataset.train_val_test_cv_split.excluded_subjects
+    train_subjects, cv_subjects, test_subjects, excluded_subjects = (
+        get_experiment_cv_params(cfg=configs))
 
     seed = configs.dataset.seed
+    mlflow.log_params({"seed": configs.dataset.seed})
+
+    set_mlflow_tags(train_subjects=train_subjects,
+                    cv_subjects=cv_subjects,
+                    test_subjects=test_subjects,
+                    excluded_subjects=excluded_subjects,
+                    input_len_start=input_len_start,
+                    input_len_end=input_len_end,
+                    input_len_step=input_len_step,
+                    num_runs_per_input_len=num_runs_per_input_len)
 
     (datasets, subjects_in_folds) = kfold_train_val_test(dataset=dataset,
                                     subject_col="User",
@@ -80,6 +102,25 @@ def get_experiment_params(cfg: DictConfig = None):
 
     return input_len_start, input_len_end, input_len_step, num_runs_per_input_len
 
+def get_experiment_cv_params(cfg: DictConfig):
+    params_config = cfg.dataset.train_val_test_cv_split
+
+    if params_config.train_subjects is None:
+        raise ValueError("train_subjects is None")
+    if params_config.cv_subjects is None:
+        raise ValueError("cv_subjects is None")
+    if params_config.test_subjects is None:
+        raise ValueError("test_subjects is None")
+    if params_config.excluded_subjects is None:
+        raise ValueError("excluded_subjects is None")
+
+    train_subjects = params_config.train_subjects
+    cv_subjects = params_config.cv_subjects
+    test_subjects = params_config.test_subjects
+    excluded_subjects = params_config.excluded_subjects
+
+    return train_subjects, cv_subjects, test_subjects, excluded_subjects
+
 def child_run(input_shape: tuple,
               num_runs_per_input_len: int,
               configs: DictConfig,
@@ -92,8 +133,6 @@ def child_run(input_shape: tuple,
     mlflow.log_params({"input_shape": configs.training.model.input_shape})
     mlflow.log_params({"input_length": input_len})
 
-    base_seed = configs.dataset.seed
-
     for i in range(num_runs_per_input_len):
         with start_child_run(run_name="InputLen_{}_Run_{}".format(input_len, i),
                              inherit_params=True,
@@ -101,7 +140,7 @@ def child_run(input_shape: tuple,
             # Indicate that this run has no more children
             mlflow.set_tag("worker_run", "true")
 
-            train_ds, valid_ds, test_ds = (
+            train_ds, valid_ds, test_ds, callbacks = (
                 segment_presplit_dataset_using_config(train_ds=datasets[i][0],
                                                       val_ds=datasets[i][1],
                                                       test_ds=datasets[i][2],
@@ -109,20 +148,15 @@ def child_run(input_shape: tuple,
 
             subjects_in_fold = subjects_in_folds[i]
 
-            # TODO: should do multiple runs per fold with different seeds?
-            # seed = base_seed + 111 * i
-            # configs.dataset.seed = seed
-
             print(f"[INFO] : Run number {i} for input len {input_len}")
             print(f"[INFO] : Train subjects: {subjects_in_fold[0]}")
             print(f"[INFO] : Validation subjects: {subjects_in_fold[1]}")
             print(f"[INFO] : Test subjects: {subjects_in_fold[2]}")
 
-            mlflow.log_params({"seed": configs.dataset.seed})
             mlflow.log_params({"train_subjects": subjects_in_fold[0],
                                "validation_subjects": subjects_in_fold[1],
                                "test_subjects": subjects_in_fold[2]})
 
-            train(cfg=configs, train_ds=train_ds, valid_ds=valid_ds, test_ds=test_ds, run_name=f"InputLen_{input_len}_Run_{i}")
-
-    configs.dataset.seed = base_seed
+            train(cfg=configs, train_ds=train_ds, valid_ds=valid_ds,
+                  test_ds=test_ds, run_name=f"InputLen_{input_len}_Run_{i}",
+                  callbacks=callbacks)

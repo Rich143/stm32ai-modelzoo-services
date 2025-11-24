@@ -14,7 +14,7 @@ import os
 
 from models_utils import get_model_name_and_its_input_shape
 from data_loader import load_dataset, load_and_filter_dataset, segment_dataset
-from data_loader import segment_presplit_dataset
+from data_loader import segment_presplit_dataset, CallbackList
 import pandas as pd
 from sklearn.model_selection import train_test_split
 import tensorflow as tf
@@ -36,7 +36,7 @@ def segment_presplit_dataset_using_config(train_ds: pd.DataFrame,
                                           test_ds: pd.DataFrame,
                                           cfg: DictConfig,
                                           to_cache: bool = False,
-) -> Tuple[ds, ds, ds]:
+) -> Tuple[ds, ds, ds, CallbackList]:
     return segment_presplit_dataset(
         train_ds=train_ds,
         val_ds=val_ds,

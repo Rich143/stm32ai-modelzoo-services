@@ -19,6 +19,8 @@ from munch import DefaultMunch
 from omegaconf import DictConfig
 import numpy as np
 import tensorflow as tf
+from tensorflow.keras.callbacks import EarlyStopping
+import mlflow
 
 from logs_utils import log_to_file, log_last_epoch_history, LRTensorBoard
 from gpu_utils import check_training_determinism
@@ -176,9 +178,34 @@ def get_callbacks(callbacks_dict: DictConfig, output_dir: str = None, logs_dir: 
 
     return callback_list
 
+def log_training_metrics_mlflow(cfg, history, early_stop_cb):
+    # Epoch actually stopped
+    stopped_epoch = history.epoch[-1] + 1
+
+    mlflow.log_metric("stopped_epoch", stopped_epoch)
+
+    if early_stop_cb is not None:
+        # Epoch with best monitored metric
+        best_epoch = early_stop_cb.best_epoch  # 0-indexed
+
+        # Extract training loss/accuracy for that epoch
+        best_train_loss = history.history['loss'][best_epoch]
+        acc_list = history.history.get('accuracy')
+        if acc_list is None:
+            best_train_acc = None
+        else:
+            best_train_acc = acc_list[best_epoch]
+
+        mlflow.log_metric("best_epoch", best_epoch)
+        mlflow.log_metric("best_loss", best_train_loss)
+        mlflow.log_metric("best_accuracy", best_train_acc)
+
 
 def train(cfg: DictConfig = None, train_ds: tf.data.Dataset = None,
-          valid_ds: tf.data.Dataset = None, test_ds: Optional[tf.data.Dataset] = None, run_name: str = "base") -> str:
+          valid_ds: tf.data.Dataset = None,
+          test_ds: Optional[tf.data.Dataset] = None,
+          callbacks: Optional[List[tf.keras.callbacks.Callback]] = None,
+          run_name: str = "base") -> str:
     """
     Trains the model using the provided configuration and datasets.
 
@@ -187,6 +214,8 @@ def train(cfg: DictConfig = None, train_ds: tf.data.Dataset = None,
         train_ds (tf.data.Dataset): training dataset loader.
         valid_ds (tf.data.Dataset): validation dataset loader.
         test_ds (Optional, tf.data.Dataset): test dataset dataset loader.
+        callbacks (Optional, List[tf.keras.callbacks.Callback]): list of callbacks.
+        run_name (str): name of the run
 
     Returns:
         Path to the best model obtained
@@ -254,10 +283,17 @@ def train(cfg: DictConfig = None, train_ds: tf.data.Dataset = None,
                   metrics=['accuracy'],
                   optimizer=get_optimizer(cfg=cfg.training.optimizer))
 
-    callbacks = get_callbacks(callbacks_dict=cfg.training.callbacks,
+    user_config_callbacks = get_callbacks(callbacks_dict=cfg.training.callbacks,
                               output_dir=output_dir,
                               saved_models_dir=saved_models_dir,
                               logs_dir=cfg.general.logs_dir)
+
+    if callbacks is None:
+        callbacks = []
+
+    callbacks += user_config_callbacks
+
+    early_stop_cb = next((cb for cb in callbacks if isinstance(cb, EarlyStopping)), None)
 
     # check if determinism can be enabled
     if cfg.general.deterministic_ops:
@@ -306,6 +342,8 @@ def train(cfg: DictConfig = None, train_ds: tf.data.Dataset = None,
     if cfg.training.trained_model_path:
         best_model.save(cfg.training.trained_model_path)
         print(f"[INFO] : Saved trained model in file {cfg.training.trained_model_path}")
+
+    log_training_metrics_mlflow(cfg, history, early_stop_cb)
 
     # Evaluate h5 best model on the validation set
     evaluate_h5_model(model_path=best_model_path, eval_ds=valid_ds,
