@@ -18,13 +18,9 @@ experiment:
     study: "gaussian_noise_sweep"
   experiment_params:
     noise_sweep_start: 0
-    noise_sweep_end: 0.052 # exclusive, so slightly over end of 0.6
+    noise_sweep_end: 0.62 # exclusive, so slightly over end of 0.6
     noise_sweep_step: 0.05
-    num_runs_per_step: 1
-    #noise_sweep_start: 0
-    #noise_sweep_end: 0.62 # exclusive, so slightly over end of 0.6
-    #noise_sweep_step: 0.05
-    #num_runs_per_step: 5
+    num_runs_per_step: 5
 
 #operation_mode: training
 #choices=['benchmarking', 'deployment', 'evaluation', 'training', 'chain_tb']
@@ -37,9 +33,11 @@ dataset:
 
   training_path: ../datasets/PAMAP2_Dataset  # Mandatory for all but deployment, and benchmarking
   validation_path: # ../datasets/mobility_v1/train.pkl      # Optional
-  validation_split: 0.2   # Optional, default value is 0.2
-  test_path: 
-  test_split: 0.25      # Optional, default value is 0.25
+  train_val_test_cv_split:
+    test_subjects: [108,]
+    train_subjects: [103, 104,] # Subjects to always be used for training
+    cv_subjects: [101, 102, 105, 106, 107] # Subjects to be used for training / validation (k_fold)
+    excluded_subjects: []
   seed: 123               # Optional, there is a default seed
 
 preprocessing:
@@ -54,8 +52,8 @@ training:
     input_shape: (24, 3, 1)
   dropout: 0.2
   batch_size: 128
-  epochs: 1
-  steps_per_epoch: 1
+  epochs: 120
+  steps_per_epoch: 1000
   optimizer:
     Adam:
       #learning_rate: 0.01
