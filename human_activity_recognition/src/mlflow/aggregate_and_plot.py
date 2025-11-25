@@ -1,55 +1,120 @@
 import mlflow
 import pandas as pd
 import matplotlib.pyplot as plt
+import argparse
+
+def parse_args():
+    parser = argparse.ArgumentParser(description="Plot MLflow sweep results.")
+
+    parser.add_argument(
+        "--experiment_name",
+        type=str,
+        default="HAR_CNN_PAMAP2",
+        help="Name of the MLflow experiment."
+    )
+
+    parser.add_argument(
+        "--sweep_id",
+        type=str,
+        default="HAR_CNN_PAMAP2_251019_153022_dd5a65",
+        help="Sweep ID used as a tag filter."
+    )
+
+    parser.add_argument(
+        "--tracking_uri",
+        type=str,
+        default="http://127.0.0.1:5000",
+        help="MLflow tracking server URI."
+    )
+
+    parser.add_argument(
+        "--sweep_parameter",
+        type=str,
+        default="input_length",
+        help="Sweep parameter used to group runs."
+    )
+
+    return parser.parse_args()
 
 # --- user inputs ---
-experiment_name = "HAR_CNN_PAMAP2"
-sweep_id = "HAR_CNN_PAMAP2_251019_153022_dd5a65"
-tracking_uri = "http://127.0.0.1:5000"
+args = parse_args()
+experiment_name = args.experiment_name
+sweep_id = args.sweep_id
+tracking_uri = args.tracking_uri
+sweep_parameter_name = args.sweep_parameter
 
-plot_metrics_fig_1 = ["float_acc_test_set"]
-
-plot_metrics_fig_2 = ["test_set/f1_weighted_avg",
-                      "test_set/precision_weighted_avg",
-                      "test_set/recall_weighted_avg"]
-
-plot_metrics_fig_3 = ["test_set/cm/cycling-cycling",
-                      "test_set/cm/running-running",
-                      "test_set/cm/walking-walking",
-                      "test_set/cm/stationary-stationary"]
-
-plot_metrics_fig_4 = ["test_set/support/cycling",
-                      "test_set/support/running",
-                      "test_set/support/walking",
-                      "test_set/support/stationary"]
-
-plot_metrics_fig_5 = ["test_set/f1/cycling",
-                      "test_set/f1/running",
-                      "test_set/f1/walking",
-                      "test_set/f1/stationary"]
-
-plot_metrics_fig_6 = ["test_set/precision/cycling",
-                      "test_set/precision/running",
-                      "test_set/precision/walking",
-                      "test_set/precision/stationary"]
-
-plot_metrics_fig_7 = ["test_set/recall/cycling",
-                      "test_set/recall/running",
-                      "test_set/recall/walking",
-                      "test_set/recall/stationary"]
+metric_templates = {
+    "fig_1": {
+        "metric_list": ["float_acc_{ds}_set"],
+        "figure_name": "Accuracy vs {sweep_param} (±1 std)"
+    },
+    "fig_2": {
+        "metric_list": [
+            "{ds}_set/f1_weighted_avg",
+            "{ds}_set/precision_weighted_avg",
+            "{ds}_set/recall_weighted_avg",
+        ],
+        "figure_name": "F1, precision, recall vs {sweep_param} (±1 std)"
+    },
+    "fig_3": {
+        "metric_list": [
+            "{ds}_set/cm/cycling-cycling",
+            "{ds}_set/cm/running-running",
+            "{ds}_set/cm/walking-walking",
+            "{ds}_set/cm/stationary-stationary",
+        ],
+        "figure_name": "CM vs {sweep_param} (±1 std)"
+    },
+    "fig_4": {
+        "metric_list": [
+            "{ds}_set/support/cycling",
+            "{ds}_set/support/running",
+            "{ds}_set/support/walking",
+            "{ds}_set/support/stationary",
+        ],
+        "figure_name": "Support vs {sweep_param} (±1 std)"
+    },
+    "fig_5": {
+        "metric_list": [
+            "{ds}_set/f1/cycling",
+            "{ds}_set/f1/running",
+            "{ds}_set/f1/walking",
+            "{ds}_set/f1/stationary",
+        ],
+        "figure_name": "F1 (by class) vs {sweep_param} (±1 std)"
+    },
+    "fig_6": {
+        "metric_list": [
+            "{ds}_set/precision/cycling",
+            "{ds}_set/precision/running",
+            "{ds}_set/precision/walking",
+            "{ds}_set/precision/stationary",
+        ],
+        "figure_name": "Precision (by class) vs {sweep_param} (±1 std)"
+    },
+    "fig_7": {
+        "metric_list": [
+            "{ds}_set/recall/cycling",
+            "{ds}_set/recall/running",
+            "{ds}_set/recall/walking",
+            "{ds}_set/recall/stationary",
+        ],
+        "figure_name": "Recall (by class) vs {sweep_param} (±1 std)"
+    },
+}
 
 # --------------------
 
-def get_parent_ids(group, input_length):
+def get_parent_ids(group, sweep_parameter_name, sweep_parameter_value):
     # include the parent run id for this input length
     parent_ids = group["tags.mlflow.parentRunId"].dropna().unique()
     if len(parent_ids) == 1:
         parent_id = parent_ids[0]  # one parent per input_length
     else:
-        print("Multiple parents for input_length {}".format(input_length))
+        print(f"Multiple parents for {sweep_parameter_name} = {sweep_parameter_value}")
         for id in parent_ids:
             print("Parent run_name: {}".format(get_run_name(client, id)))
-        raise ValueError(f"Multiple parents for input_length {input_length}")
+        raise ValueError(f"Multiple parents for {sweep_parameter_name} = {sweep_parameter_value}")
 
     return parent_id
 
@@ -77,10 +142,13 @@ runs = mlflow.search_runs(
     filter_string=f"tags.sweep_id = '{sweep_id}'",
 )
 
-runs = runs[runs["params.seed"].notna()]
+truthy = ["true", "1", "yes", "t"]
+
+# Filter out non-worker runs
+runs = runs[runs["tags.worker_run"].str.lower().isin(truthy)]
 
 # Convert params
-runs["params.input_length"] = runs["params.input_length"].astype(float)
+runs[f"params.{sweep_parameter_name}"] = runs[f"params.{sweep_parameter_name}"].astype(float)
 
 # Get numeric metrics
 metric_cols = [c for c in runs.columns if c.startswith("metrics.")]
@@ -88,12 +156,14 @@ metric_names = [c.replace("metrics.", "") for c in metric_cols]
 
 root_run_id = None
 
-# Group by input_length and compute mean/std for each metric
+# Group by sweep param and compute mean/std for each metric
 summary = []
-for input_length, group in runs.groupby("params.input_length"):
-    data = {"input_length": input_length}
+for sweep_parameter_value, group in runs.groupby(f"params.{sweep_parameter_name}"):
+    data = {sweep_parameter_name: sweep_parameter_value}
 
-    parent_id = get_parent_ids(group, input_length)
+    parent_id = get_parent_ids(group,
+                               sweep_parameter_name,
+                               sweep_parameter_value)
     data["parent_run_id"] = parent_id
 
     root_id = get_root_id(client,parent_id)
@@ -107,7 +177,7 @@ for input_length, group in runs.groupby("params.input_length"):
 
     summary.append(data)
 
-summary_df = pd.DataFrame(summary).sort_values("input_length")
+summary_df = pd.DataFrame(summary).sort_values(sweep_parameter_name)
 
 # --- plot multiple metrics on the same graph ---
 
@@ -119,7 +189,7 @@ def plot_figure(summary_df, plot_metrics, title, root_run_id = None, save=False)
         std_col = f"{metric}_std"
 
         plt.errorbar(
-            summary_df["input_length"],
+            summary_df[sweep_parameter_name],
             summary_df[mean_col],
             yerr=summary_df[std_col],
             fmt='-o',
@@ -127,7 +197,7 @@ def plot_figure(summary_df, plot_metrics, title, root_run_id = None, save=False)
             label=metric.title()
         )
 
-    plt.xlabel("Input Length")
+    plt.xlabel(sweep_parameter_name)
     plt.ylabel("Metric Value")
     plt.title(title)
     plt.grid(True, alpha=0.3)
@@ -147,22 +217,48 @@ def plot_figure(summary_df, plot_metrics, title, root_run_id = None, save=False)
 
     plt.close()
 
+def plot_all_metrics(summary_df, root_run_id, sweep_parameter_name="param", dataset="validation", save=False):
+    ds = dataset.lower()
 
-plot_figure(summary_df, plot_metrics_fig_1, "Accuracy vs Input Length (±1 std)", root_run_id=root_run_id, save=True)
-plot_figure(summary_df, plot_metrics_fig_2, "F1, precision, recall vs Input Length (±1 std)", root_run_id=root_run_id, save=True)
-plot_figure(summary_df, plot_metrics_fig_3, "CM vs Input Length (±1 std)", root_run_id=root_run_id, save=True)
-plot_figure(summary_df, plot_metrics_fig_4, "Support vs Input Length (±1 std)", root_run_id=root_run_id, save=True)
-plot_figure(summary_df, plot_metrics_fig_5, "F1 (by class) vs Input Length (±1 std)", root_run_id=root_run_id, save=True)
-plot_figure(summary_df, plot_metrics_fig_6, "Precision (by class) vs Input Length (±1 std)", root_run_id=root_run_id, save=True)
-plot_figure(summary_df, plot_metrics_fig_7, "Recall (by class) vs Input Length (±1 std)", root_run_id=root_run_id, save=True)
+    # Human-readable name for titles
+    ds_name = "Test Set" if ds == "test" else "Validation Set"
 
+    for fig_id, cfg in metric_templates.items():
+
+        # Expand metric templates like "{ds}_set/f1/cycling"
+        metric_list = [m.format(ds=ds) for m in cfg["metric_list"]]
+
+        # Insert sweep parameter name and append dataset
+        fig_title = (
+            cfg["figure_name"].format(sweep_param=sweep_parameter_name)
+            + f" ({ds_name})"
+        )
+
+        # Call your actual plot function
+        plot_figure(
+            summary_df,
+            metric_list,
+            fig_title,
+            root_run_id=root_run_id,
+            save=save,
+        )
+
+plot_all_metrics(summary_df,
+                 root_run_id,
+                 dataset="validation",
+                 sweep_parameter_name=sweep_parameter_name,
+                 save=True)
+plot_all_metrics(summary_df,
+                 root_run_id,
+                 dataset="test",
+                 sweep_parameter_name=sweep_parameter_name,
+                 save=True)
 
 for _, row in summary_df.iterrows():
     parent_run_id = row["parent_run_id"]
     parent_run_name = get_run_name(client, parent_run_id)
 
-    # start a nested run under the parent (optional, or just log to parent)
-    # here we log directly to parent
+    # Log metrics to parent
     for metric in metric_names:
         mean_val = row[f"{metric}_mean"]
         std_val = row[f"{metric}_std"]
