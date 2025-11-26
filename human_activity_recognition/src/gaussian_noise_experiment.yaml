@@ -18,8 +18,8 @@ experiment:
     study: "gaussian_noise_sweep"
   experiment_params:
     noise_sweep_start: 0
-    noise_sweep_end: 0.62 # exclusive, so slightly over end of 0.6
-    noise_sweep_step: 0.05
+    noise_sweep_end: 0.32 # exclusive, so slightly over end of 0.6
+    noise_sweep_step: 0.025
     num_runs_per_step: 5
 
 #operation_mode: training
@@ -49,7 +49,7 @@ preprocessing:
 training:
   model:
     name: ign # available choices are [ign, gmp]
-    input_shape: (24, 3, 1)
+    input_shape: (48, 3, 1)
   dropout: 0.2
   batch_size: 128
   epochs: 120

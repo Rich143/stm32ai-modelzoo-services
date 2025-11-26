@@ -18,7 +18,7 @@ experiment:
     study: "input_len_sweep"
   experiment_params:
     input_len_sweep_start: 20
-    input_len_sweep_end: 101
+    input_len_sweep_end: 144
     input_len_sweep_step: 4
     k_fold_validation: True # [True, False]
     num_runs_per_input_len: 5
@@ -45,7 +45,7 @@ preprocessing:
   gravity_rot_sup: True
   normalization: False
   gaussian_noise: True
-  gaussian_std: 0.2 # m/s^2
+  gaussian_std: 0.15 # m/s^2
 
 training:
   model:
