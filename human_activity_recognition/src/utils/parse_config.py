@@ -31,80 +31,19 @@ def parse_dataset_section(cfg: DictConfig, mode: str = None, mode_groups: DictCo
         mode_groups (DictConfig): configuration dictionary
     '''
 
-    legal = ["name", "class_names", "training_path", "validation_path",
-             "validation_split", "test_path", "test_split", "seed", "train_val_test_cv_split"]
+    legal = ["names", "paths", "class_names", "seed", "train_val_test_cv_split"]
 
-    required = []
+    required = ["names", "paths"]
     one_or_more = []
-    if mode in mode_groups.training:
-        required += ["training_path",]
-    elif mode in mode_groups.evaluation:
-        one_or_more += ["training_path", "test_path"]
 
     check_config_attributes(cfg, specs={"legal": legal,
                             "all": required, "one_or_more": one_or_more},
                             section="dataset")
 
     # Set default values of missing optional attributes
-    if not cfg.name:
-        cfg.name = "<unnamed>"
-    if not cfg.validation_split:
-        cfg.validation_split = 0.2
-    if not cfg.test_split:
-        cfg.validation_split = 0.25
     cfg.seed = cfg.seed if cfg.seed else 123
 
-    # validate the class names
-    if cfg.class_names and cfg.class_names != '':
-        if cfg.name.lower() == "wisdm":
-            if not(cfg.class_names == ["Jogging", "Stationary", "Stairs", "Walking"]):
-                raise ValueError(f"\nThe value of `class_names` for `wisdm` should be {['Jogging', 'Stationary', 'Stairs', 'Walking']}\n"
-                                "Please check the 'dataset.class_names' section of your configuration file.")
-        elif cfg.name.lower() == "mobility_v1":
-            if not(cfg.class_names == ["Stationary", "Walking", "Jogging", "Biking"]):
-                raise ValueError(f"\nThe value of `class_names` for `mobility_v1` should be {['Stationary', 'Walking', 'Jogging', 'Biking']}\n"
-                                "Please check the 'dataset.class_names' section of your configuration file.")
-        elif cfg.name.lower() == "pamap2":
-            if not(lowercase_list(cfg.class_names) == ["stationary", "walking", "running", "cycling"]):
-                raise ValueError(f"\nThe value of `class_names` for `pamap2` should be {['Stationary', 'Walking', 'Running', 'Cycling']}\n"
-                                "Please check the 'dataset.class_names' section of your configuration file.")
-        else:
-                raise ValueError("The dataset name is not valid")
-    # # Sort the class names if they were provided
-    # if cfg.class_names:
-    #     cfg.class_names = sorted(cfg.class_names)
-
     # Check the value of validation_split if it is set
-    if cfg.validation_split:
-        split = cfg.validation_split
-        if split <= 0.0 or split >= 1.0:
-            raise ValueError(f"\nThe value of `validation_split` should be > 0 and < 1. Received {split}\n"
-                                "Please check the 'dataset' section of your configuration file.")
-
-    dataset_paths = []
-    # Datasets used in a training
-    if mode in mode_groups.training:
-        dataset_paths += [(cfg.training_path, "training"),]
-        if cfg.validation_path:
-            dataset_paths += [(cfg.validation_path, "validation"),]
-        if cfg.test_path:
-            dataset_paths += [(cfg.test_path, "test"),]
-
-    # Datasets used in an evaluation
-    if mode in mode_groups.evaluation:
-        if cfg.test_path:
-            dataset_paths += [(cfg.test_path, "test"),]
-        elif cfg.validation_path:
-            dataset_paths += [(cfg.validation_path, "validation"),]
-        else:
-            dataset_paths += [(cfg.training_path, "training"),]
-
-    # Check that the dataset root directories exist
-    for path, name in dataset_paths:
-        message = f"\nPlease check the 'dataset.{name}_path' attribute in your configuration file."
-        if path and not (os.path.isfile(path) or os.path.isdir(path)):
-            raise FileNotFoundError(f"\nUnable to find the root directory of the {name} set\n"
-                                    f"Received path: {path}{message}")
 
 
 def parse_preprocessing_section(cfg: DictConfig) -> None:
@@ -114,7 +53,7 @@ def parse_preprocessing_section(cfg: DictConfig) -> None:
         cfg (DictConfig): configuration dictionary containing the preprocessing info
     '''
 
-    legal = ["gravity_rot_sup", "normalization", "gaussian_noise", "gaussian_std"]
+    legal = ["gravity_rot_sup", "gaussian_noise", "gaussian_std", "sample_rate", "mean_group_delay"]
     check_config_attributes(cfg, specs={"legal": legal, "all": legal}, section="preprocessing")
 
 
@@ -257,16 +196,5 @@ def get_config(config_data: DictConfig) -> DefaultMunch:
 
     # MLFlow section parsing
     parse_mlflow_section(cfg.mlflow)
-
-    # Check that the provided datast is from one of the supported datasets, raise error otherwise
-    cds = cfg.dataset
-    if cfg.operation_mode in ['benchmarking', 'deployment']:
-        pass
-    elif(cds.name.lower() in ['wisdm', 'mobility_v1', 'pamap2']):
-        check_dataset_contents(cds)
-        cds.class_names = get_class_names(cds.name)
-    else:
-        raise ValueError("\nOnly \'wisdm\', \'mobility_v1\', and \'pamap2\' datasets are supproted."
-                         "Please update your configuration file.")
 
     return cfg

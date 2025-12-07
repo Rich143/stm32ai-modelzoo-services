@@ -4,10 +4,11 @@ from datetime import datetime
 import uuid
 
 from omegaconf import DictConfig
-from preprocess import load_and_filter_dataset_from_config, segment_presplit_dataset_using_config
+from preprocess import load_and_preprocess_dataset, segment_presplit_dataset_using_config
 from train import train
 from experiments.experiment_utils import (kfold_train_val_test, start_child_run,
-                                          DatasetTriplet, SubjectListTriplet)
+                                          DatasetTriplet, SubjectListTriplet,
+                                          get_cv_subjects)
 
 def set_mlflow_tags(train_subjects, cv_subjects, test_subjects, excluded_subjects,
                    input_len_start, input_len_end, input_len_step, num_runs_per_input_len):
@@ -23,17 +24,19 @@ def set_mlflow_tags(train_subjects, cv_subjects, test_subjects, excluded_subject
         "kfold": True
     })
 
-def input_len_experiment(configs: DictConfig = None) -> None:
-    input_len_start, input_len_end, input_len_step, num_runs_per_input_len = get_experiment_params(cfg=configs)
+def input_len_experiment(configs: DictConfig) -> None:
+    input_len_start, input_len_end, input_len_step, num_runs_per_input_len = (
+        get_experiment_params(cfg=configs)
+    )
 
-    input_lengths = [i for i in range(input_len_start, input_len_end, input_len_step)]
+    input_lengths = list(range(input_len_start, input_len_end, input_len_step))
 
-    datasets = []
-
-    dataset = load_and_filter_dataset_from_config(cfg=configs)
+    dataset = load_and_preprocess_dataset(cfg=configs)
 
     train_subjects, cv_subjects, test_subjects, excluded_subjects = (
-        get_experiment_cv_params(cfg=configs))
+        get_cv_subjects(experiment_cv_config=configs.dataset.train_val_test_cv_split,
+                        dataset=dataset,
+                        subject_col="user"))
 
     seed = configs.dataset.seed
     mlflow.log_params({"seed": configs.dataset.seed})
@@ -48,11 +51,10 @@ def input_len_experiment(configs: DictConfig = None) -> None:
                     num_runs_per_input_len=num_runs_per_input_len)
 
     (datasets, subjects_in_folds) = kfold_train_val_test(dataset=dataset,
-                                    subject_col="User",
+                                    subject_col="user",
                                     test_subjects=test_subjects,
                                     always_train_subjects=train_subjects,
                                     cv_subjects=cv_subjects,
-                                    excluded_subjects=excluded_subjects,
                                     n_splits=num_runs_per_input_len,
                                     random_state=seed,
                                     shuffle=True)
@@ -60,7 +62,9 @@ def input_len_experiment(configs: DictConfig = None) -> None:
     log_gaussian_noise_mlflow(cfg=configs)
 
     for i in range(len(input_lengths)):
-        input_shape = (input_lengths[i], configs.training.model.input_shape[1], configs.training.model.input_shape[2])
+        input_shape = (input_lengths[i],
+                       configs.training.model.input_shape[1],
+                       configs.training.model.input_shape[2])
 
         with start_child_run(run_name=f"Input Shape: {input_shape}",
                              inherit_params=True,
@@ -101,25 +105,6 @@ def get_experiment_params(cfg: DictConfig = None):
     num_runs_per_input_len = params_config.num_runs_per_input_len
 
     return input_len_start, input_len_end, input_len_step, num_runs_per_input_len
-
-def get_experiment_cv_params(cfg: DictConfig):
-    params_config = cfg.dataset.train_val_test_cv_split
-
-    if params_config.train_subjects is None:
-        raise ValueError("train_subjects is None")
-    if params_config.cv_subjects is None:
-        raise ValueError("cv_subjects is None")
-    if params_config.test_subjects is None:
-        raise ValueError("test_subjects is None")
-    if params_config.excluded_subjects is None:
-        raise ValueError("excluded_subjects is None")
-
-    train_subjects = params_config.train_subjects
-    cv_subjects = params_config.cv_subjects
-    test_subjects = params_config.test_subjects
-    excluded_subjects = params_config.excluded_subjects
-
-    return train_subjects, cv_subjects, test_subjects, excluded_subjects
 
 def child_run(input_shape: tuple,
               num_runs_per_input_len: int,

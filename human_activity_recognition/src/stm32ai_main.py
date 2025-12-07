@@ -42,7 +42,6 @@ sys.path.append(os.path.join(os.path.dirname(__file__), './models'))
 
 from gpu_utils import set_gpu_memory_limit
 from cfg_utils import get_random_seed
-from preprocess import preprocess
 from visualize_utils import display_figures
 from parse_config import get_config
 from train import train
@@ -53,7 +52,7 @@ from typing import Optional
 from logs_utils import log_to_file
 from experiments.experiment_utils import mlflow_init
 from experiments.input_len_sweep import input_len_experiment
-from experiments.gaussian_noise_sweep import gaussian_noise_experiment
+# from experiments.gaussian_noise_sweep import gaussian_noise_experiment
 
 def chain_tb(cfg: DictConfig = None, train_ds: tf.data.Dataset = None,
              valid_ds: tf.data.Dataset = None, test_ds: tf.data.Dataset = None) -> None:
@@ -84,11 +83,12 @@ def chain_tb(cfg: DictConfig = None, train_ds: tf.data.Dataset = None,
     print('[INFO] : benchmarking complete.')
     display_figures(cfg)
 
-def experiment_mode(configs: DictConfig = None) -> None:
+def experiment_mode(configs: DictConfig) -> None:
     if configs.experiment.tags.sweep_axis == "input_len":
         input_len_experiment(configs=configs)
     elif configs.experiment.tags.sweep_axis == "gaussian_noise":
-        gaussian_noise_experiment(configs=configs)
+        raise NotImplementedError
+        # gaussian_noise_experiment(configs=configs)
     else:
         raise ValueError("Unknown sweep axis: {}".format(configs.experiment.tags.sweep_axis))
 
@@ -225,15 +225,16 @@ def main(cfg: DictConfig) -> None:
             experiment_mode(configs=cfg)
             print('[INFO] : Experiment complete.')
         else:
-            # Perform further processing based on the selected mode
-            preprocess_output = preprocess(cfg=cfg)
-            train_ds, valid_ds, test_ds = preprocess_output
-            # Process the selected mode
-            process_mode(mode=mode,
-                         configs=cfg,
-                         train_ds=train_ds,
-                         valid_ds=valid_ds,
-                         test_ds=test_ds)
+            raise NotImplementedError
+            # # Perform further processing based on the selected mode
+            # preprocess_output = preprocess(cfg=cfg)
+            # train_ds, valid_ds, test_ds = preprocess_output
+            # # Process the selected mode
+            # process_mode(mode=mode,
+                         # configs=cfg,
+                         # train_ds=train_ds,
+                         # valid_ds=valid_ds,
+                         # test_ds=test_ds)
     else:
         # Process the selected mode
         process_mode(mode=mode,

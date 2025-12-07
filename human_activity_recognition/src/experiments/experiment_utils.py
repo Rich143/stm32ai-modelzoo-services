@@ -4,6 +4,7 @@ from datetime import datetime
 import uuid
 from typing import List, Tuple, TypeAlias
 import pandas as pd
+import re
 
 from omegaconf import DictConfig
 from sklearn.model_selection import KFold
@@ -79,15 +80,42 @@ def start_child_run(run_name=None, inherit_params=True, inherit_tags=True, **kwa
     return child
 
 DatasetTriplet: TypeAlias = Tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame]
-SubjectListTriplet: TypeAlias = Tuple[List[int], List[int], List[int]]
+SubjectListTriplet: TypeAlias = Tuple[List[str], List[str], List[str]]
+SubjectListQuad: TypeAlias = Tuple[List[str], List[str], List[str], List[str]]
+
+def get_cv_subjects(experiment_cv_config: DictConfig,
+                    dataset: pd.DataFrame,
+                    subject_col: str) -> SubjectListQuad:
+    """
+    Get CV subjects from experiment config.
+    """
+
+    if experiment_cv_config.train_subjects is None:
+        raise ValueError("train_subjects is None")
+    if experiment_cv_config.test_subjects is None:
+        raise ValueError("test_subjects is None")
+    if experiment_cv_config.excluded_subjects is None:
+        raise ValueError("excluded_subjects is None")
+
+    train_subjects = experiment_cv_config.train_subjects
+    test_subjects = experiment_cv_config.test_subjects
+    excluded_subjects = experiment_cv_config.excluded_subjects
+
+    cv_subjects = check_subject_coverage_get_cv_subjects(dataset=dataset,
+                                           subject_col=subject_col,
+                                           test_subjects=test_subjects,
+                                           train_subjects=train_subjects,
+                                           excluded_subjects=excluded_subjects)
+
+    return train_subjects, cv_subjects, test_subjects, excluded_subjects
+
 
 def kfold_train_val_test(
     dataset: pd.DataFrame,
     subject_col: str,
-    test_subjects: List[int],
-    always_train_subjects: List[int],
-    cv_subjects: List[int],
-    excluded_subjects: List[int],
+    test_subjects: List[str],
+    always_train_subjects: List[str],
+    cv_subjects: List[str],
     n_splits: int = 5,
     random_state: int = 42,
     shuffle: bool = True,
@@ -97,15 +125,6 @@ def kfold_train_val_test(
 
     Returns a list of (train_df, val_df, test_df) tuples.
     """
-
-    check_subject_coverage(
-        dataset=dataset,
-        subject_col=subject_col,
-        test_subjects=test_subjects,
-        train_subjects=always_train_subjects,
-        cv_subjects=cv_subjects,
-        excluded_subjects=excluded_subjects
-    )
 
     kf = KFold(n_splits=n_splits, shuffle=shuffle, random_state=random_state)
     folds = []
@@ -136,62 +155,70 @@ class SubjectCoverageError(Exception):
     pass
 
 
-def check_subject_coverage(
+def check_subject_coverage_get_cv_subjects(
     dataset: pd.DataFrame,
     subject_col: str,
     test_subjects: list,
     train_subjects: list,
-    cv_subjects: list,
     excluded_subjects: list,
-) -> None:
+) -> list:
     """
-    Verify that all subjects in the dataset are included in exactly one of the provided lists.
-    Raises an error if duplicates, missing, or extra subjects are found.
+    Verify correct assignment of subjects into test, train, cv (computed), and excluded.
+    Any subjects not in test/train/excluded are automatically assigned to cv.
+    Raises an error if duplicates or extra subjects are found.
+
+    Returns:
+        cv_subjects (list of strings): Subjects automatically assigned to CV.
     """
+
+    # Convert lists to sets
     all_subjects_in_dataset = set(dataset[subject_col].unique())
-    defined_subjects = {
-        "test": set(test_subjects),
-        "train": set(train_subjects),
-        "cv": set(cv_subjects),
-        "excluded": set(excluded_subjects),
-    }
+    test_set = set(test_subjects)
+    train_set = set(train_subjects)
+    excluded_set = set(excluded_subjects)
 
-    # Combine all defined subjects
-    all_defined_subjects = set.union(*defined_subjects.values())
+    # Check for unknown subjects
+    user_defined_union = test_set | train_set | excluded_set
+    extra_subjects = user_defined_union - all_subjects_in_dataset
+    if extra_subjects:
+        raise SubjectCoverageError(
+            f"⚠️ Extra subjects (not in dataset): {sorted(extra_subjects)}"
+        )
 
-    # Identify issues
-    missing_subjects = all_subjects_in_dataset - all_defined_subjects
-    extra_subjects = all_defined_subjects - all_subjects_in_dataset
-
+    # Check for duplicates between user-defined categories
     duplicates = []
-    keys = list(defined_subjects.keys())
+    categories = {
+        "test": test_set,
+        "train": train_set,
+        "excluded": excluded_set,
+    }
+    keys = list(categories.keys())
+
     for i in range(len(keys)):
         for j in range(i + 1, len(keys)):
-            overlap = defined_subjects[keys[i]] & defined_subjects[keys[j]]
+            overlap = categories[keys[i]] & categories[keys[j]]
             if overlap:
                 duplicates.append((keys[i], keys[j], overlap))
 
-    # Build summary message
-    messages = []
-    messages.append("=== Subject Coverage Check ===")
-    messages.append(f"Total unique subjects in dataset: {len(all_subjects_in_dataset)}")
-    messages.append(f"Subjects defined across all lists: {len(all_defined_subjects)}\n")
-
-    if missing_subjects:
-        messages.append(f"⚠️ Missing subjects (not in any list): {sorted(missing_subjects)}")
-    if extra_subjects:
-        messages.append(f"⚠️ Extra subjects (not in dataset): {sorted(extra_subjects)}")
     if duplicates:
-        messages.append("⚠️ Duplicates found across lists:")
+        msg = ["⚠️ Duplicate subjects across lists:"]
         for a, b, overlap in duplicates:
-            messages.append(f"  {a} ↔ {b}: {sorted(overlap)}")
+            msg.append(f"  {a} ↔ {b}: {sorted(overlap)}")
+        raise SubjectCoverageError("\n".join(msg))
 
-    if not (missing_subjects or extra_subjects or duplicates):
-        messages.append("✅ All subjects are uniquely assigned to one list.")
-        print("\n".join(messages))
-        print("==============================\n")
-        return
+    # Compute CV subjects
+    cv_set = all_subjects_in_dataset - user_defined_union
+    cv_subjects = sorted(cv_set)
 
-    # If any problem, raise error with detailed info
-    error_message = "\n".join(messages)
-    raise SubjectCoverageError(error_message)
+    # Summary output
+    print("=== Subject Coverage Check ===")
+    print(f"Total subjects in dataset: {len(all_subjects_in_dataset)}")
+    print(f"Test subjects: {sorted(test_set)}")
+    print(f"Train subjects: {sorted(train_set)}")
+    print(f"Excluded subjects: {sorted(excluded_set)}")
+    print(f"Computed CV subjects ({len(cv_subjects)}): {cv_subjects}")
+    print("==============================\n")
+
+    print("✅ All subjects are uniquely assigned to one category (test/train/cv/excluded).")
+
+    return cv_subjects

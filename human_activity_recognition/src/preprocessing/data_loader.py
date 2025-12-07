@@ -110,23 +110,30 @@ def load_individual_dataset(dataset_name: str,
                             dataset_path: str,
                             global_segment_id: int
                            ) -> Tuple[pd.DataFrame, int]:
-    if dataset_name == "harth":
+    if dataset_name == "HARTH":
         dataset, global_segment_id = load_and_process_harth(dataset_path=dataset_path,
                                                             global_segment_id=global_segment_id)
 
         return dataset, global_segment_id
-    elif dataset_name == "pamap2":
+    elif dataset_name == "PAMAP2":
         dataset, global_segment_id = load_and_process_pamap2(dataset_path=dataset_path,
                                                    global_segment_id=global_segment_id)
 
         return dataset, global_segment_id
     else:
-        raise NameError('Only \'pamap2\' and \'harth\' datasets supported!')
+        raise NameError('Only \'PAMAP2\' and \'HARTH\' datasets supported!')
 
 if __name__ == "__main__":
-    # from pandasgui import show
+    try:
+        from pandasgui import show
+    except ImportError:
+        show = None
 
-    dataset_names = ["pamap2", "harth"]
+    # dataset_names = ["PAMAP2"]
+    dataset_names = ["PAMAP2", "HARTH"]
+    # dataset_paths = [
+        # "../../datasets/PAMAP2_Dataset",
+    # ]
     dataset_paths = [
         "../../datasets/PAMAP2_Dataset",
         "../../datasets/harth",
@@ -141,4 +148,5 @@ if __name__ == "__main__":
                             mean_group_delay=123,
                             gravity_rot_sup=True)
 
-    # show(df)
+    if show is not None:
+        show(df)
