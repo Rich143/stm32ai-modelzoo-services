@@ -5,7 +5,9 @@ from preprocessing import gravity_rotation
 
 from load_harth import load_and_process_harth
 from load_pamap2 import load_and_process_pamap2
+from load_rad import load_and_process_rad
 from data_load_helpers import global_activity_name_to_id
+import mlflow
 
 def apply_filter_by_segment(dataset,
                             axis_cols=['x', 'y', 'z'],
@@ -69,6 +71,9 @@ def load_datasets(dataset_names: List[str],
     datasets = []
     global_segment_id = 0
 
+    mlflow.set_tag("dataset_names", dataset_names)
+    mlflow.set_tag("dataset_paths", dataset_paths)
+
     for dataset_name, dataset_path in zip(dataset_names, dataset_paths):
         dataset, global_segment_id = load_individual_dataset(dataset_name=dataset_name,
                                           dataset_path=dataset_path,
@@ -122,6 +127,11 @@ def load_individual_dataset(dataset_name: str,
                                                    global_segment_id=global_segment_id)
 
         return dataset, global_segment_id
+    elif dataset_name == "rad":
+        dataset, global_segment_id = load_and_process_rad(dataset_path=dataset_path,
+                                                   global_segment_id=global_segment_id)
+
+        return dataset, global_segment_id
     else:
         raise NameError('Only \'pamap2\' and \'harth\' datasets supported!')
 
@@ -131,15 +141,15 @@ if __name__ == "__main__":
     except ImportError:
         show = None
 
-    # dataset_names = ["PAMAP2"]
-    dataset_names = ["PAMAP2", "HARTH"]
+    dataset_names = ["rad"]
+    # dataset_names = ["PAMAP2", "HARTH"]
+    dataset_paths = [
+        "../../datasets/rad",
+    ]
     # dataset_paths = [
         # "../../datasets/PAMAP2_Dataset",
+        # "../../datasets/harth",
     # ]
-    dataset_paths = [
-        "../../datasets/PAMAP2_Dataset",
-        "../../datasets/harth",
-    ]
 
     df = load_datasets(dataset_names=dataset_names,
                   dataset_paths=dataset_paths)

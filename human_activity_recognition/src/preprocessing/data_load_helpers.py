@@ -34,6 +34,7 @@ def global_activity_id_to_name(id: int) -> str:
 _DATASET_IDS = {
     'pamap2': 0,
     'harth': 1,
+    'rad': 2,
 }
 
 def dataset_name_to_id(name: str) -> int:
