@@ -348,7 +348,7 @@ def kfold_train_val_test(
 
         fold_val_subjects   = sorted(cv_df.iloc[val_idx]['user'].unique().tolist())
 
-        # # Split datasets
+        # Split datasets
         train_df = dataset[dataset['user'].isin(fold_train_subjects)].copy().reset_index(drop=True)
         val_df = dataset[dataset['user'].isin(fold_val_subjects)].copy().reset_index(drop=True)
         test_df = dataset[dataset['user'].isin(test_subjects)].copy().reset_index(drop=True)

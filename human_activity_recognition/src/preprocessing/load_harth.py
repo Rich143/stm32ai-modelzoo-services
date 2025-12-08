@@ -237,7 +237,7 @@ def load_harth_from_file_and_segment(dataset_path: str,
 
     for file_path in sorted(glob(file_pattern)):
         subject_id = get_subject_id(file_path)
-        print(f"Loading harth subject {subject_id}")
+        print(f"[INFO] Loading harth subject {subject_id}")
 
         subject_col_names = col_names
 

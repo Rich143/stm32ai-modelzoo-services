@@ -36,7 +36,7 @@ def load_pamap2_from_file_and_segment(dataset_path: str,
 
     for file_path in sorted(glob(file_pattern)):
         subject_id = int(os.path.basename(file_path)[7:10])
-        print("Loading pamap2 subject ", subject_id)
+        print("[INFO] Loading pamap2 subject ", subject_id)
 
         df = pd.read_csv(file_path, sep=' ', header=None, usecols=usecols, names=col_names)
         df['user'] = dataset_subject_id_to_global_subject_id(subject_id,
