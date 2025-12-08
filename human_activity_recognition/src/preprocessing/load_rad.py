@@ -128,6 +128,7 @@ def load_rad_from_file_and_segment(dataset_path: str,
                     file_path = os.path.join(activity_path, file_name)
                     df = pd.read_csv(file_path, usecols=['unproc_x', 'unproc_y', 'unproc_z'])
 
+                    print(f"[INFO] Loading RAD file: {file_path}")
                     df['username'] = user_name
 
                     local_subject_id = user_name_to_id(user_name)
