@@ -22,7 +22,6 @@ def global_activity_name_to_id(name: str) -> int:
         raise KeyError(f"Activity name not found: '{name}'")
     return _ACTIVITY_NAME_TO_GLOBAL_ACTIVITY_ID[key]
 
-
 def global_activity_id_to_name(id: int) -> str:
     """
     Convert an activity ID to its name.
@@ -31,6 +30,29 @@ def global_activity_id_to_name(id: int) -> str:
     if id not in _GLOBAL_ACTIVITY_ID_TO_NAME:
         raise KeyError(f"Activity ID not found: {id}")
     return _GLOBAL_ACTIVITY_ID_TO_NAME[id]
+
+_DATASET_IDS = {
+    'pamap2': 0,
+    'harth': 1,
+}
+
+def dataset_name_to_id(name: str) -> int:
+    """
+    Convert a dataset name to its ID.
+    Raises KeyError if the name is not found.
+    """
+    key = name.lower().strip()
+    if key not in _DATASET_IDS:
+        raise KeyError(f"Dataset name not found: '{name}'")
+    return _DATASET_IDS[key]
+
+def get_datasets_list():
+    return list(_DATASET_IDS.keys())
+
+def dataset_subject_id_to_global_subject_id(subject_id: int, dataset_name: str) -> int:
+    dataset_id = dataset_name_to_id(dataset_name)
+
+    return subject_id + (dataset_id * 1000000)
 
 def copy_accel_to_xyz(df, source='chest_acc16'):
     """

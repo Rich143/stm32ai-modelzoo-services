@@ -27,20 +27,19 @@ experiment:
 #choices=['benchmarking', 'deployment', 'evaluation', 'training', 'chain_tb']
 
 dataset:
-  names: [PAMAP2, HARTH]
+  names: [pamap2, harth]
   paths: [../datasets/PAMAP2_Dataset, ../datasets/harth]
   class_names: [stationary, walking, running, cycling] # PAMAP2
   train_val_test_cv_split:
-    test_subjects: [PAMAP2_108, HARTH_6]
-    train_subjects: [PAMAP2_103, PAMAP2_104,] # Subjects to always be used for training
-    #cv_subjects: [PAMAP2_101, PAMAP2_102, PAMAP2_105, PAMAP2_106, PAMAP2_107] # Subjects to be used for training / validation (k_fold)
+    test_subjects: [PAMAP2_108, HARTH_25]
+    train_subjects: [] # Subjects to always be used for training
     excluded_subjects: [] # Excluded subjects
   seed: 123               # Optional, there is a default seed
 
 preprocessing:
   gravity_rot_sup: True
   gaussian_noise: True
-  gaussian_std: 0.15 # m/s^2
+  gaussian_std: 0.125 # m/s^2
   sample_rate: 50 # Hz
   mean_group_delay: 123 # Samples
 
@@ -51,7 +50,7 @@ training:
   dropout: 0.2
   batch_size: 128
   epochs: 120
-  steps_per_epoch: 1000
+  steps_per_epoch: 5000
   optimizer:
     Adam:
       #learning_rate: 0.01

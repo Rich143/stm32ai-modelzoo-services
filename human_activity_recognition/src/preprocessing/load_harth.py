@@ -3,7 +3,8 @@ import pandas as pd
 import os
 from glob import glob
 import re
-from data_load_helpers import global_activity_name_to_id, copy_accel_to_xyz, fill_nans
+from data_load_helpers import (global_activity_name_to_id, copy_accel_to_xyz, fill_nans,
+                               dataset_subject_id_to_global_subject_id)
 
 # Central lookup: name (lowercase) → ID
 _ACTIVITY_NAME_TO_ID = {
@@ -147,11 +148,11 @@ def parse_and_check_timestamps(df):
     return df
 
 
-# dataset = dataset[['timestamp', 'x', 'y', 'z', 'activity_label', 'segment_id', 'user']]
+# dataset = dataset[['timestamp', 'x', 'y', 'z', 'activity_label', 'segment_id', 'user', 'dataset']]
 def rename_cols_drop_unused(df: pd.DataFrame):
     df = df.rename(columns={'label': 'activity_label'})
 
-    df = df[['timestamp', 'x', 'y', 'z', 'activity_label', 'segment_id', 'user']]
+    df = df[['timestamp', 'x', 'y', 'z', 'activity_label', 'segment_id', 'user', 'dataset']]
 
     return df
 
@@ -191,7 +192,7 @@ def print_time_gaps(df, time_gap, pad=3):
         Number of rows before and after each gap to display.
     """
     gap_indices = df.index[time_gap].to_list()
-    
+
     if not gap_indices:
         print("No time gaps found.")
         return
@@ -199,7 +200,7 @@ def print_time_gaps(df, time_gap, pad=3):
     for idx in gap_indices:
         start = max(idx - pad, 0)
         end = min(idx + pad, len(df) - 1)
-        
+
         print(f"\n=== Time gap around index {idx} ===")
         print(df.iloc[start:end+1])
 
@@ -231,7 +232,6 @@ def load_harth_from_file_and_segment(dataset_path: str,
     subjects_with_idx = [21, 15]
 
     all_dfs = []
-    # file_pattern = os.path.join(dataset_path, 'S006.csv')
     file_pattern = os.path.join(dataset_path, 'S*.csv')
     segment_counter = global_segment_id
 
@@ -256,7 +256,9 @@ def load_harth_from_file_and_segment(dataset_path: str,
 
         df = parse_and_check_timestamps(df)
 
-        df['user'] = f"HARTH_{subject_id}"
+        df['user'] = dataset_subject_id_to_global_subject_id(subject_id=subject_id,
+                                                             dataset_name='harth')
+        df['dataset'] = 'harth'
 
         is_sorted = df['timestamp'].is_monotonic_increasing
         if not is_sorted:

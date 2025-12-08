@@ -35,8 +35,7 @@ def input_len_experiment(configs: DictConfig) -> None:
 
     train_subjects, cv_subjects, test_subjects, excluded_subjects = (
         get_cv_subjects(experiment_cv_config=configs.dataset.train_val_test_cv_split,
-                        dataset=dataset,
-                        subject_col="user"))
+                        dataset=dataset))
 
     seed = configs.dataset.seed
     mlflow.log_params({"seed": configs.dataset.seed})
@@ -51,7 +50,6 @@ def input_len_experiment(configs: DictConfig) -> None:
                     num_runs_per_input_len=num_runs_per_input_len)
 
     (datasets, subjects_in_folds) = kfold_train_val_test(dataset=dataset,
-                                    subject_col="user",
                                     test_subjects=test_subjects,
                                     always_train_subjects=train_subjects,
                                     cv_subjects=cv_subjects,

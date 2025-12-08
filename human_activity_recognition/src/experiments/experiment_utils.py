@@ -5,9 +5,14 @@ import uuid
 from typing import List, Tuple, TypeAlias
 import pandas as pd
 import re
+import numpy as np
 
 from omegaconf import DictConfig
-from sklearn.model_selection import KFold
+from sklearn.model_selection import StratifiedGroupKFold
+
+from data_load_helpers import (get_datasets_list,
+                               dataset_subject_id_to_global_subject_id,
+                               dataset_name_to_id)
 
 # from preprocess import load_and_filter_dataset_from_config, segment_dataset_from_config
 # from train import train
@@ -80,12 +85,32 @@ def start_child_run(run_name=None, inherit_params=True, inherit_tags=True, **kwa
     return child
 
 DatasetTriplet: TypeAlias = Tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame]
-SubjectListTriplet: TypeAlias = Tuple[List[str], List[str], List[str]]
-SubjectListQuad: TypeAlias = Tuple[List[str], List[str], List[str], List[str]]
+SubjectListTriplet: TypeAlias = Tuple[List[int], List[int], List[int]]
+SubjectListQuad: TypeAlias = Tuple[List[int], List[int], List[int], List[int]]
+
+def config_subject_to_global_subject_id(subject: str) -> int:
+    datasets = get_datasets_list()
+    config_subject_pattern = re.compile(r"(.+)_([0-9]+)$")
+
+    match = config_subject_pattern.match(subject)
+    if not match:
+        raise ValueError(f"Invalid subject format: {subject}")
+
+    dataset_name = match.group(1).lower()
+
+    if dataset_name not in datasets:
+        raise ValueError(f"Unknown dataset: {dataset_name}")
+
+    subject_id = int(match.group(2))
+
+    return dataset_subject_id_to_global_subject_id(subject_id=subject_id,
+                                                   dataset_name=dataset_name)
+
+def convert_subject_list_to_global_subject_id(subject_list: List[str]) -> List[int]:
+    return [config_subject_to_global_subject_id(subject) for subject in subject_list]
 
 def get_cv_subjects(experiment_cv_config: DictConfig,
-                    dataset: pd.DataFrame,
-                    subject_col: str) -> SubjectListQuad:
+                    dataset: pd.DataFrame) -> SubjectListQuad:
     """
     Get CV subjects from experiment config.
     """
@@ -101,44 +126,232 @@ def get_cv_subjects(experiment_cv_config: DictConfig,
     test_subjects = experiment_cv_config.test_subjects
     excluded_subjects = experiment_cv_config.excluded_subjects
 
+    train_subjects = convert_subject_list_to_global_subject_id(train_subjects)
+    test_subjects = convert_subject_list_to_global_subject_id(test_subjects)
+    excluded_subjects = convert_subject_list_to_global_subject_id(excluded_subjects)
+
     cv_subjects = check_subject_coverage_get_cv_subjects(dataset=dataset,
-                                           subject_col=subject_col,
                                            test_subjects=test_subjects,
                                            train_subjects=train_subjects,
                                            excluded_subjects=excluded_subjects)
 
     return train_subjects, cv_subjects, test_subjects, excluded_subjects
 
+import math
+import matplotlib.pyplot as plt
+
+def plot_class_distribution_per_user(df, dataset_name):
+    """
+    Plots histograms of class distribution (activity_label) for each user
+    within the specified dataset. Creates up to 4 subplots per figure.
+
+    Parameters
+    ----------
+    df : pandas.DataFrame
+        Must contain columns: ['dataset', 'user', 'activity_label']
+    dataset_name : str
+        The dataset to visualize
+    """
+
+    # Filter dataframe for the selected dataset
+    sub = df[df['dataset'] == dataset_name]
+
+    # Unique users in this dataset
+    users = sorted(sub['user'].unique())
+    n_users = len(users)
+
+    # 4 subplots per figure
+    plots_per_fig = 4
+    n_figs = math.ceil(n_users / plots_per_fig)
+
+    for fig_idx in range(n_figs):
+        # Create figure
+        fig, axes = plt.subplots(2, 2, figsize=(10, 8))
+        axes = axes.ravel()
+
+        start = fig_idx * plots_per_fig
+        end = min(start + plots_per_fig, n_users)
+
+        for ax_idx, user_idx in enumerate(range(start, end)):
+            user = users[user_idx]
+            ax = axes[ax_idx]
+
+            user_data = sub[sub['user'] == user]
+
+            ax.hist(user_data['activity_label'], bins='auto')
+            ax.set_title(f"User {user}")
+            ax.set_xlabel("Activity Label")
+            ax.set_ylabel("Count")
+
+        # Hide any remaining empty axes
+        for ax in axes[end - start:]:
+            ax.set_visible(False)
+
+        fig.suptitle(f"Class Distribution – Dataset: {dataset_name} (Figure {fig_idx+1})")
+        plt.tight_layout()
+        plt.show()
+
+def summarize_dataset_stats(
+    df,
+    dataset_col="dataset",
+    subject_col="user",
+    label_col="activity_label",
+):
+    results = {}
+
+    # -------------------------
+    # 1. Number of subjects per dataset
+    # -------------------------
+    subjects_per_dataset = (
+        df.groupby(dataset_col)[subject_col]
+        .nunique()
+        .sort_values(ascending=False)
+    )
+    results["subjects_per_dataset"] = subjects_per_dataset
+
+    # -------------------------
+    # 2. Sample counts per subject
+    # -------------------------
+    sample_counts_per_subject = (
+        df.groupby(subject_col)
+        .size()
+        .sort_values(ascending=False)
+    )
+    results["sample_counts_per_subject"] = sample_counts_per_subject
+
+    # -------------------------
+    # 3. Label distribution per subject
+    # -------------------------
+    datasets = df[dataset_col].unique()
+    results["label_distribution_per_subject"] = {}
+    for dataset in datasets:
+        df_dataset = df[df[dataset_col] == dataset]
+        label_dist_per_subject = (
+            df_dataset.groupby([subject_col, label_col])
+            .size()
+            .rename("count")
+            .reset_index()
+            .pivot(index=subject_col, columns=label_col, values="count")
+            .fillna(0)
+            .astype(int)
+        )
+        results["label_distribution_per_subject"][dataset] = label_dist_per_subject
+
+    return results
+
+def plot_dataset_stats(stats):
+    """
+    Plot the output of summarize_dataset_stats().
+    stats: dict returned by summarize_dataset_stats()
+    """
+
+    subjects_per_dataset = stats["subjects_per_dataset"]
+    sample_counts_per_subject = stats["sample_counts_per_subject"]
+    label_distribution = stats["label_distribution_per_subject"]
+
+    # -----------------------------
+    # 1. Subjects per dataset
+    # -----------------------------
+    plt.figure(figsize=(8, 4))
+    subjects_per_dataset.plot(kind="bar")
+    plt.title("Number of Subjects per Dataset")
+    plt.xlabel("Dataset")
+    plt.ylabel("Subject Count")
+    plt.tight_layout()
+    plt.show()
+
+    # -----------------------------
+    # 2. Sample counts per subject
+    # -----------------------------
+    plt.figure(figsize=(10, 4))
+    sample_counts_per_subject.plot(kind="bar")
+    plt.title("Sample Counts per Subject")
+    plt.xlabel("Subject")
+    plt.ylabel("Number of Samples")
+    plt.tight_layout()
+    plt.show()
+
+    # -----------------------------
+    # 3. Label distribution per subject (heatmap-like)
+    # -----------------------------
+    datasets = stats["label_distribution_per_subject"].keys()
+    for dataset in datasets:
+        fig, ax = plt.subplots(figsize=(10, 6))
+
+        data = label_distribution[dataset].values
+        subjects = label_distribution[dataset].index.astype(str)
+        labels = label_distribution[dataset].columns.astype(str)
+
+        im = ax.imshow(data, aspect="auto")
+
+        # Tick labels
+        ax.set_xticks(np.arange(len(labels)))
+        ax.set_xticklabels(labels, rotation=45, ha="right")
+
+        ax.set_yticks(np.arange(len(subjects)))
+        ax.set_yticklabels(subjects)
+
+        ax.set_title(f"Label Distribution per Subject (Dataset: {dataset})")
+        ax.set_xlabel("Label")
+        ax.set_ylabel("Subject")
+
+        fig.colorbar(im, ax=ax)
+        plt.tight_layout()
+        plt.show()
+
 
 def kfold_train_val_test(
     dataset: pd.DataFrame,
-    subject_col: str,
-    test_subjects: List[str],
-    always_train_subjects: List[str],
-    cv_subjects: List[str],
+    test_subjects: List[int],
+    always_train_subjects: List[int],
+    cv_subjects: List[int],
     n_splits: int = 5,
     random_state: int = 42,
     shuffle: bool = True,
 ) -> Tuple[List[DatasetTriplet], List[SubjectListTriplet]]:
     """
-    K-Fold split where some subjects are always in training, and others rotate between train/val.
+    Group aware K-Fold split where some subjects are always in training, and others rotate between train/val.
+    Uses stratified K-Fold to ensure equal distribution of activities between train/val
 
     Returns a list of (train_df, val_df, test_df) tuples.
     """
 
-    kf = KFold(n_splits=n_splits, shuffle=shuffle, random_state=random_state)
+    # Filter df down to only the rows belonging to cv subjects
+    cv_df = dataset[dataset['user'].isin(cv_subjects)].reset_index(drop=True)
+
+    ## Stats for debugging
+    # plot_class_distribution_per_user(cv_df, "pamap2")
+    # stats = summarize_dataset_stats(dataset)
+    # plot_dataset_stats(stats)
+
+    labels = cv_df['activity_label'].values
+    groups = cv_df['user'].values
+    datasets = (cv_df['dataset']
+                .apply(dataset_name_to_id)
+                .astype(int).values)
+
+    # Stratified split (by dataset and label)
+    y_strat = datasets * (labels.max() + 1) + labels
+
+    sgkf = StratifiedGroupKFold(n_splits=n_splits, shuffle=shuffle, random_state=random_state)
+
     folds = []
     subjects_in_folds = []
 
-    for fold_idx, (train_idx, val_idx) in enumerate(kf.split(cv_subjects)):
-        # Subjects for this fold
-        fold_train_subjects = [cv_subjects[i] for i in train_idx] + always_train_subjects
-        fold_val_subjects = [cv_subjects[i] for i in val_idx]
+    for fold_idx, (train_idx, val_idx) in enumerate(sgkf.split(cv_df, y_strat, groups)):
+        # Convert row indices → subject IDs
+        fold_train_subjects = sorted(cv_df.iloc[train_idx]['user'].unique().tolist())
 
-        # Split datasets
-        train_df = dataset[dataset[subject_col].isin(fold_train_subjects)].copy().reset_index(drop=True)
-        val_df = dataset[dataset[subject_col].isin(fold_val_subjects)].copy().reset_index(drop=True)
-        test_df = dataset[dataset[subject_col].isin(test_subjects)].copy().reset_index(drop=True)
+        # Add always-train subjects if applicable
+        if len(always_train_subjects) > 0:
+            fold_train_subjects = sorted(set(fold_train_subjects).union(always_train_subjects))
+
+        fold_val_subjects   = sorted(cv_df.iloc[val_idx]['user'].unique().tolist())
+
+        # # Split datasets
+        train_df = dataset[dataset['user'].isin(fold_train_subjects)].copy().reset_index(drop=True)
+        val_df = dataset[dataset['user'].isin(fold_val_subjects)].copy().reset_index(drop=True)
+        test_df = dataset[dataset['user'].isin(test_subjects)].copy().reset_index(drop=True)
 
         print(f"[FOLD {fold_idx+1}]")
         print(f"  Train subjects: {sorted(fold_train_subjects)}")
@@ -157,7 +370,6 @@ class SubjectCoverageError(Exception):
 
 def check_subject_coverage_get_cv_subjects(
     dataset: pd.DataFrame,
-    subject_col: str,
     test_subjects: list,
     train_subjects: list,
     excluded_subjects: list,
@@ -172,7 +384,7 @@ def check_subject_coverage_get_cv_subjects(
     """
 
     # Convert lists to sets
-    all_subjects_in_dataset = set(dataset[subject_col].unique())
+    all_subjects_in_dataset = set(dataset['user'].unique())
     test_set = set(test_subjects)
     train_set = set(train_subjects)
     excluded_set = set(excluded_subjects)

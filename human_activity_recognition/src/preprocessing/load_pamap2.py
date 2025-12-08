@@ -2,7 +2,7 @@ import numpy as np
 import pandas as pd
 import os
 from glob import glob
-from data_load_helpers import global_activity_name_to_id, copy_accel_to_xyz, fill_nans
+from data_load_helpers import dataset_subject_id_to_global_subject_id, global_activity_name_to_id, copy_accel_to_xyz, fill_nans
 
 def load_pamap2_from_file_and_segment(dataset_path: str,
                                       global_segment_id: int,
@@ -39,7 +39,9 @@ def load_pamap2_from_file_and_segment(dataset_path: str,
         print("Loading pamap2 subject ", subject_id)
 
         df = pd.read_csv(file_path, sep=' ', header=None, usecols=usecols, names=col_names)
-        df['user'] = f"PAMAP2_{subject_id}"
+        df['user'] = dataset_subject_id_to_global_subject_id(subject_id,
+                                                             'pamap2')
+        df['dataset'] = 'pamap2'
 
         # Sort and compute time differences
         df = df.sort_values('Arrival_Time').reset_index(drop=True)
@@ -69,14 +71,16 @@ def load_pamap2_from_file_and_segment(dataset_path: str,
 
     return df, segment_counter
 
-# dataset = dataset[['timestamp', 'x', 'y', 'z', 'activity_label', 'segment_id', 'user']]
+# dataset = dataset[['timestamp', 'x', 'y', 'z', 'activity_label', 'segment_id',
+#                    'user', 'dataset']]
 def rename_cols_drop_unused(df: pd.DataFrame):
     df = df.rename(columns={
         'Arrival_Time': 'timestamp',
         'Activity_Label': 'activity_label'
     })
 
-    df = df[['timestamp', 'x', 'y', 'z', 'activity_label', 'segment_id', 'user']]
+    df = df[['timestamp', 'x', 'y', 'z', 'activity_label', 'segment_id',
+             'user', 'dataset']]
 
     return df
 
