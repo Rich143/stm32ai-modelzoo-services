@@ -2,6 +2,7 @@ import mlflow
 import pandas as pd
 import matplotlib.pyplot as plt
 import argparse
+import sys
 
 def parse_args():
     parser = argparse.ArgumentParser(description="Plot MLflow sweep results.")
@@ -141,6 +142,10 @@ runs = mlflow.search_runs(
     experiment_ids=[experiment_id],
     filter_string=f"tags.sweep_id = '{sweep_id}'",
 )
+
+if len(runs) == 0:
+    print(f"No runs found for experiment {experiment_name} and sweep {sweep_id}")
+    sys.exit(1)
 
 truthy = ["true", "1", "yes", "t"]
 

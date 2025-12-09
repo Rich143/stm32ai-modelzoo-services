@@ -148,11 +148,11 @@ def parse_and_check_timestamps(df):
     return df
 
 
-# dataset = dataset[['timestamp', 'x', 'y', 'z', 'activity_label', 'segment_id', 'user', 'dataset']]
+# dataset = dataset[['x', 'y', 'z', 'activity_label', 'segment_id', 'user', 'dataset']]
 def rename_cols_drop_unused(df: pd.DataFrame):
     df = df.rename(columns={'label': 'activity_label'})
 
-    df = df[['timestamp', 'x', 'y', 'z', 'activity_label', 'segment_id', 'user', 'dataset']]
+    df = df[['x', 'y', 'z', 'activity_label', 'segment_id', 'user', 'dataset']]
 
     return df
 

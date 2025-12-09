@@ -88,6 +88,10 @@ def convert_local_activity_ids_to_global(dataset: pd.DataFrame):
         .fillna(unknown_activity_id)
         .astype(int))
 
+def downsample(df: pd.DataFrame, downsample_factor: int):
+    df_down = df.iloc[::downsample_factor].reset_index(drop=True)
+
+    return df_down
 
 def process_rad(df: pd.DataFrame):
     df = copy_accel_to_xyz(df, source='unproc')
@@ -97,6 +101,8 @@ def process_rad(df: pd.DataFrame):
     df = fill_nans(df)
 
     convert_local_activity_ids_to_global(df)
+
+    df = downsample(df, downsample_factor=2)
 
     return df
 

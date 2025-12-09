@@ -71,7 +71,7 @@ def load_pamap2_from_file_and_segment(dataset_path: str,
 
     return df, segment_counter
 
-# dataset = dataset[['timestamp', 'x', 'y', 'z', 'activity_label', 'segment_id',
+# dataset = dataset[['x', 'y', 'z', 'activity_label', 'segment_id',
 #                    'user', 'dataset']]
 def rename_cols_drop_unused(df: pd.DataFrame):
     df = df.rename(columns={
@@ -79,7 +79,7 @@ def rename_cols_drop_unused(df: pd.DataFrame):
         'Activity_Label': 'activity_label'
     })
 
-    df = df[['timestamp', 'x', 'y', 'z', 'activity_label', 'segment_id',
+    df = df[['x', 'y', 'z', 'activity_label', 'segment_id',
              'user', 'dataset']]
 
     return df
