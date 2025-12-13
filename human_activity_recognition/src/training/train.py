@@ -381,7 +381,8 @@ def train(cfg: DictConfig = None, train_ds: tf.data.Dataset = None,
                         # callbacks=callbacks,
                         # verbose=1)
     # history = model.fit(train_ds, verbose=1)
-    history = model.fit(ds, epochs=epochs, verbose=1)
+    # history = model.fit(ds, epochs=epochs, verbose=1)
+    history = model.fit(train_ds, epochs=epochs, verbose=1)
     end_time = timer()
     #save the last epoch history in the log file
     last_epoch=log_last_epoch_history(cfg, output_dir)

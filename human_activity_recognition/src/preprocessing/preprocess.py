@@ -19,6 +19,7 @@ from tqdm import tqdm
 import statistics
 from tensorflow.keras.utils import to_categorical
 import mlflow
+from math import ceil
 
 CallbackList: TypeAlias = List[tf.keras.callbacks.Callback]
 ds: TypeAlias = tf.data.Dataset[Any]
@@ -191,7 +192,16 @@ def build_train_ds(train_x: np.ndarray,
     if to_cache:
         train_ds = train_ds.cache()
 
-    train_ds = (train_ds.repeat()
+    num_samples = train_x.shape[0]
+    dataset_batches = int(num_samples / batch_size)
+
+    steps_per_epoch = 1024
+    if dataset_batches < steps_per_epoch:
+        repeats = ceil(steps_per_epoch / dataset_batches)
+    else:
+        repeats = 1
+
+    train_ds = (train_ds.repeat(repeats)
                 .batch(batch_size))
     # train_ds = (train_ds.shuffle(train_x.shape[0],
                                  # reshuffle_each_iteration=True,
