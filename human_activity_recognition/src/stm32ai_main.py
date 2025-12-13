@@ -8,21 +8,30 @@
 #  *--------------------------------------------------------------------------------------------*/
 import setuptools
 import os
+
+# os.environ["TF_CPP_MIN_LOG_LEVEL"] = "0"    # enable all TF logs
+# os.environ["CUDA_VISIBLE_DEVICES"] = "-1"
+# os.environ["KERAS_BACKEND"] = "tensorflow"
+# os.environ["KERAS_BACKEND_DEBUG"] = "1"
+
 import shutil
 import sys
 from hydra.core.hydra_config import HydraConfig
 import hydra
 import warnings
 warnings.filterwarnings("ignore")
-os.environ['TF_CPP_MIN_LOG_LEVEL'] = '3'
+# # os.environ['TF_CPP_MIN_LOG_LEVEL'] = '3'
 
 import tensorflow as tf
+
+# tf.config.set_visible_devices([], 'GPU')
+# tf.debugging.enable_check_numerics()
+# tf.config.run_functions_eagerly(True)
+
 from omegaconf import DictConfig
 import mlflow
 import mlflow.keras
 import argparse
-from clearml import Task
-from clearml.backend_config.defs import get_active_config_file
 
 sys.path.append(os.path.join(os.path.dirname(__file__), '../../common'))
 sys.path.append(os.path.join(os.path.dirname(__file__), '../../common/benchmarking'))
@@ -159,13 +168,6 @@ def process_mode(mode: str = None,
     # logging the completion of the chain
     log_to_file(configs.output_dir, f'operation finished: {mode}')
 
-    # ClearML - Example how to get task's context anywhere in the file.
-    # Checks if there's a valid ClearML configuration file
-    if get_active_config_file() is not None:
-        print(f"[INFO] : ClearML task connection")
-        task = Task.current_task()
-        task.connect(configs)
-
 
 @hydra.main(version_base=None, config_path="", config_name="user_config")
 def main(cfg: DictConfig) -> None:
@@ -196,17 +198,6 @@ def main(cfg: DictConfig) -> None:
 
     # TODO! use the config file for experiment name
     mlflow_init(cfg.experiment, cfg.mlflow.uri)
-
-    # Checks if there's a valid ClearML configuration file
-    print(f"[INFO] : ClearML config check")
-    if get_active_config_file() is not None:
-        print(f"[INFO] : ClearML initialization and configuration")
-        # ClearML - Initializing ClearML's Task object.
-        task = Task.init(project_name=cfg.general.project_name,
-                         task_name='har_modelzoo_task')
-        # ClearML - Optional yaml logging
-        task.connect_configuration(name=cfg.operation_mode,
-                                   configuration=cfg)
 
     # Seed global seed for random generators
     seed = get_random_seed(cfg)

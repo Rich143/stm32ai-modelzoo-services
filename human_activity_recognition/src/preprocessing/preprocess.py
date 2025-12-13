@@ -153,7 +153,7 @@ def get_data_segments(dataset: pd.DataFrame,
             labels.append(statistics.mode(dataset['activity_label'][init: end]))
 
     # converting the segments from list to numpy array
-    segments = np.asarray(segments, dtype=np.float)
+    segments = np.asarray(segments, dtype=float)
     segments = segments.reshape(segments.shape[0], segments.shape[1],
                                 segments.shape[2], 1)
     labels = np.asarray(labels)
@@ -191,30 +191,32 @@ def build_train_ds(train_x: np.ndarray,
     if to_cache:
         train_ds = train_ds.cache()
 
-    train_ds = (train_ds.shuffle(train_x.shape[0],
-                                 reshuffle_each_iteration=True,
-                                 seed=seed)
-                .repeat()
+    train_ds = (train_ds.repeat()
                 .batch(batch_size))
+    # train_ds = (train_ds.shuffle(train_x.shape[0],
+                                 # reshuffle_each_iteration=True,
+                                 # seed=seed)
+                # .repeat()
+                # .batch(batch_size))
 
     callbacks = []
 
-    if gaussian_noise:
-        noise_cfg = NoiseConfig(gaussian_std, seed)
+    # if gaussian_noise:
+        # noise_cfg = NoiseConfig(gaussian_std, seed)
 
-        callbacks.append(UpdateEpoch(noise_cfg))
+        # callbacks.append(UpdateEpoch(noise_cfg))
 
-        # Adds in a batch idx to use with the stateless random number generator
-        train_ds = train_ds.enumerate()
-        train_ds = train_ds.map(make_stateless_noise_fn(noise_cfg),
-                                num_parallel_calls=tf.data.AUTOTUNE)
-        mlflow.log_params({"gaussian_noise": True})
-        mlflow.log_params({"gaussian_std": gaussian_std})
-    else:
-        mlflow.log_params({"gaussian_noise": False})
-        mlflow.log_params({"gaussian_std": 0})
+        # # Adds in a batch idx to use with the stateless random number generator
+        # train_ds = train_ds.enumerate()
+        # train_ds = train_ds.map(make_stateless_noise_fn(noise_cfg),
+                                # num_parallel_calls=tf.data.AUTOTUNE)
+        # mlflow.log_params({"gaussian_noise": True})
+        # mlflow.log_params({"gaussian_std": gaussian_std})
+    # else:
+        # mlflow.log_params({"gaussian_noise": False})
+        # mlflow.log_params({"gaussian_std": 0})
 
-    train_ds = train_ds.prefetch(tf.data.AUTOTUNE)
+    # train_ds = train_ds.prefetch(tf.data.AUTOTUNE)
 
     return train_ds, callbacks
 

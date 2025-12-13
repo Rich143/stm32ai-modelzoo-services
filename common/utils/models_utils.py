@@ -9,15 +9,15 @@
 
 import os
 from tabulate import tabulate
-from keras.utils.layer_utils import count_params
+from tensorflow.keras.backend import count_params
 from typing import Dict, Optional, Tuple, List
 import tensorflow as tf
 from tensorflow.keras.models import Model
 import numpy as np
 import sklearn
 from pathlib import Path
-from onnx import ModelProto
-import onnxruntime
+# from onnx import ModelProto
+# import onnxruntime
 import mlflow
 from logs_utils import log_to_file
 
@@ -153,19 +153,20 @@ def get_model_name_and_its_input_shape(model_path: str = None,
                                f"Received path {model_path}") from error
 
     elif file_extension == ".onnx":
-        try:
-            # Load the model
-            onx = ModelProto()
-            with open(model_path, "rb") as f:
-                content = f.read()
-                onx.ParseFromString(content)
-            sess = onnxruntime.InferenceSession(model_path)
-            # Get the model input shape
-            input_shape = sess.get_inputs()[0].shape
-            input_shape = tuple(input_shape)[-3:]
-        except RuntimeError as error:
-            raise RuntimeError("\nUnable to extract input shape from .onnx model file\n"
-                               f"Received path {model_path}") from error
+        raise NotImplementedError
+        # try:
+            # # Load the model
+            # onx = ModelProto()
+            # with open(model_path, "rb") as f:
+                # content = f.read()
+                # onx.ParseFromString(content)
+            # sess = onnxruntime.InferenceSession(model_path)
+            # # Get the model input shape
+            # input_shape = sess.get_inputs()[0].shape
+            # input_shape = tuple(input_shape)[-3:]
+        # except RuntimeError as error:
+            # raise RuntimeError("\nUnable to extract input shape from .onnx model file\n"
+                               # f"Received path {model_path}") from error
 
     else:
         raise RuntimeError(f"\nUnknown/unsupported model file type.\nExpected `.tflite`, `.h5`, or `.onnx`."
@@ -276,36 +277,43 @@ def model_summary(model):
     - Number of trainable layers
     - Number of non-trainable layers
     """
-    # Create the summary table
-    num_layers = len(model.layers)
-    trainable_layers = 0
-    table = []
-    for i, layer in enumerate(model.layers):
-        layer_type = layer.__class__.__name__
-        if layer_type == "InputLayer":
-            layer_shape = model.input.shape
-        else:
-            layer_shape = layer.output_shape
-        is_trainable = True if layer.trainable else False
-        num_params = layer.count_params()
-        if layer.trainable:
-            trainable_layers += 1
-        table.append([i, is_trainable, layer.name, layer_type, num_params, layer_shape])
+    # Count params doesn't work in new tensorflow, so we just use model.summary instead of this
+    raise NotImplementedError
+    # # Create the summary table
+    # num_layers = len(model.layers)
+    # trainable_layers = 0
+    # table = []
+    # for i, layer in enumerate(model.layers):
+        # layer_type = layer.__class__.__name__
+        # if layer_type == "InputLayer":
+            # layer_shape = model.input.shape
+        # else:
+            # # safer way to get output shape
+            # try:
+                # layer_shape = layer.output.shape
+            # except AttributeError:
+                # # fallback: compute output shape if layer is not built
+                # layer_shape = layer.compute_output_shape(layer.input_shape)
+        # is_trainable = True if layer.trainable else False
+        # num_params = layer.count_params()
+        # if layer.trainable:
+            # trainable_layers += 1
+        # table.append([i, is_trainable, layer.name, layer_type, num_params, layer_shape])
 
-    # Display the table
-    print(108 * '=')
-    print("  Model:", model.name)
-    print(108 * '=')
-    print(tabulate(table, headers=["Layer index", "Trainable", "Name", "Type", "Params#", "Output shape"]))
-    print(108 * '-')
-    print("Total params:", model.count_params())
-    print("Trainable params: ", count_params(model.trainable_weights))
-    print("Non-trainable params: ", count_params(model.non_trainable_weights))
-    print(108 * '-')
-    print("Total layers:", num_layers)
-    print("Trainable layers:", trainable_layers)
-    print("Non-trainable layers:", num_layers - trainable_layers)
-    print(108 * '=')
+    # # Display the table
+    # print(108 * '=')
+    # print("  Model:", model.name)
+    # print(108 * '=')
+    # print(tabulate(table, headers=["Layer index", "Trainable", "Name", "Type", "Params#", "Output shape"]))
+    # print(108 * '-')
+    # print("Total params:", model.count_params())
+    # print("Trainable params: ", count_params(model.trainable_weights))
+    # print("Non-trainable params: ", count_params(model.non_trainable_weights))
+    # print(108 * '-')
+    # print("Total layers:", num_layers)
+    # print("Trainable layers:", trainable_layers)
+    # print("Non-trainable layers:", num_layers - trainable_layers)
+    # print(108 * '=')
 
 
 def count_h5_parameters(output_dir: str = None,

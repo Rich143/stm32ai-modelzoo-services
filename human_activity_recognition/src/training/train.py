@@ -75,6 +75,12 @@ def load_model_to_train(cfg, model_path=None, num_classes=None) -> tf.keras.Mode
 
     return model, input_shape
 
+class DebugCallback(tf.keras.callbacks.Callback):
+    def on_train_batch_begin(self, batch, logs=None):
+        print(f"Starting batch {batch}")
+
+    def on_train_batch_end(self, batch, logs=None):
+        print(f"Finished batch {batch}")
 
 def get_callbacks(callbacks_dict: DictConfig, output_dir: str = None, logs_dir: str = None,
                   saved_models_dir: str = None) -> List[tf.keras.callbacks.Callback]:
@@ -269,14 +275,15 @@ def train(cfg: DictConfig = None, train_ds: tf.data.Dataset = None,
         set_dropout_rate(model, dropout_rate=cfg.training.dropout)
 
     # Display a summary of the model
-    if cfg.training.resume_training_from:
-        model_summary(model)
-        if len(model.layers) == 2:
-            model_summary(model.layers[1])
-        else:
-            model_summary(model.layers[2])
-    else:
-        model_summary(model)
+    # if cfg.training.resume_training_from:
+        # model_summary(model)
+        # if len(model.layers) == 2:
+            # model_summary(model.layers[1])
+        # else:
+            # model_summary(model.layers[2])
+    # else:
+        # model_summary(model)
+    model.summary()
 
     # Compile the augmented model
     model.compile(loss=get_loss(num_classes=num_classes),
@@ -292,6 +299,8 @@ def train(cfg: DictConfig = None, train_ds: tf.data.Dataset = None,
         callbacks = []
 
     callbacks += user_config_callbacks
+
+    callbacks.append(DebugCallback())
 
     early_stop_cb = next((cb for cb in callbacks if isinstance(cb, EarlyStopping)), None)
 
@@ -311,15 +320,42 @@ def train(cfg: DictConfig = None, train_ds: tf.data.Dataset = None,
     if os.path.isfile(runtime_csv_path):
         os.remove(runtime_csv_path)
 
+    # Test dataset
+    print("Loading first batch of test data...")
+    for x, y in train_ds.take(1):
+        print(f"Loaded first batch of test data: {x.shape}, {y.shape}")
+    print("Test data loaded")
+
+    print("Testing dataset iteration...")
+    for i, batch in enumerate(train_ds.take(100)):
+        print("Batch", i, "loaded")
+    print("Test dataset iteration complete")
+
+    # Shapes you specified
+    x_shape = (128, 20, 3, 1)
+    y_shape = (128, 4)
+
+    # Input data (float32 is important for TF)
+    x = np.random.randn(*x_shape).astype(np.float32)
+
+    # Labels — choose ONE of the following depending on your loss
+    # ------------------------------------------------------------
+
+    # Option A: one-hot labels (for categorical_crossentropy)
+    y = np.random.randint(0, 2, size=y_shape).astype(np.float32)
+
     # Train the model
     print("Starting training...")
     print("Training for {} epochs, steps per epoch : {}, batch size : {}".format(cfg.training.epochs, cfg.training.steps_per_epoch, cfg.training.batch_size))
     start_time = timer()
-    history = model.fit(train_ds,
-                        validation_data=valid_ds,
-                        epochs=cfg.training.epochs,
-                        steps_per_epoch=cfg.training.steps_per_epoch,
-                        callbacks=callbacks)
+    # history = model.fit(train_ds,
+                        # validation_data=valid_ds,
+                        # epochs=cfg.training.epochs,
+                        # steps_per_epoch=cfg.training.steps_per_epoch,
+                        # callbacks=callbacks,
+                        # verbose=1)
+    # history = model.fit(train_ds, verbose=1)
+    history = model.fit(x, y, epochs=3, batch_size=32, verbose=1)
     end_time = timer()
     #save the last epoch history in the log file
     last_epoch=log_last_epoch_history(cfg, output_dir)
