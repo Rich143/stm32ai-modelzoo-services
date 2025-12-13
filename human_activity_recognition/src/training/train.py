@@ -32,6 +32,7 @@ import lr_schedulers
 from evaluate import evaluate_h5_model
 from visualize_utils import vis_training_curves
 
+from math import ceil
 
 def load_model_to_train(cfg, model_path=None, num_classes=None) -> tf.keras.Model:
     """
@@ -75,12 +76,12 @@ def load_model_to_train(cfg, model_path=None, num_classes=None) -> tf.keras.Mode
 
     return model, input_shape
 
-class DebugCallback(tf.keras.callbacks.Callback):
-    def on_train_batch_begin(self, batch, logs=None):
-        print(f"Starting batch {batch}")
+# class DebugCallback(tf.keras.callbacks.Callback):
+    # def on_train_batch_begin(self, batch, logs=None):
+        # print(f"Starting batch {batch}")
 
-    def on_train_batch_end(self, batch, logs=None):
-        print(f"Finished batch {batch}")
+    # def on_train_batch_end(self, batch, logs=None):
+        # print(f"Finished batch {batch}")
 
 def get_callbacks(callbacks_dict: DictConfig, output_dir: str = None, logs_dir: str = None,
                   saved_models_dir: str = None) -> List[tf.keras.callbacks.Callback]:
@@ -300,7 +301,7 @@ def train(cfg: DictConfig = None, train_ds: tf.data.Dataset = None,
 
     callbacks += user_config_callbacks
 
-    callbacks.append(DebugCallback())
+    # callbacks.append(DebugCallback())
 
     early_stop_cb = next((cb for cb in callbacks if isinstance(cb, EarlyStopping)), None)
 
@@ -320,20 +321,22 @@ def train(cfg: DictConfig = None, train_ds: tf.data.Dataset = None,
     if os.path.isfile(runtime_csv_path):
         os.remove(runtime_csv_path)
 
-    # Test dataset
-    print("Loading first batch of test data...")
-    for x, y in train_ds.take(1):
-        print(f"Loaded first batch of test data: {x.shape}, {y.shape}")
-    print("Test data loaded")
+    # # Test dataset
+    # print("Loading first batch of test data...")
+    # for x, y in train_ds.take(1):
+        # print(f"Loaded first batch of test data: {x.shape}, {y.shape}")
+    # print("Test data loaded")
 
-    print("Testing dataset iteration...")
-    for i, batch in enumerate(train_ds.take(100)):
-        print("Batch", i, "loaded")
-    print("Test dataset iteration complete")
+    # print("Testing dataset iteration...")
+    # for i, batch in enumerate(train_ds.take(100)):
+        # print("Batch", i, "loaded")
+    # print("Test dataset iteration complete")
+
+    num_samples = 8192
 
     # Shapes you specified
-    x_shape = (128, 20, 3, 1)
-    y_shape = (128, 4)
+    x_shape = (num_samples, 20, 3, 1)
+    y_shape = (num_samples, 4)
 
     # Input data (float32 is important for TF)
     x = np.random.randn(*x_shape).astype(np.float32)
@@ -343,6 +346,29 @@ def train(cfg: DictConfig = None, train_ds: tf.data.Dataset = None,
 
     # Option A: one-hot labels (for categorical_crossentropy)
     y = np.random.randint(0, 2, size=y_shape).astype(np.float32)
+
+    def identity(x, y):
+        return x, y
+
+    batch_size = 32
+    steps_per_epoch = 1024
+    epochs = 3
+
+    dataset_batches = int(num_samples / batch_size)
+
+    if dataset_batches < steps_per_epoch:
+        repeats = ceil(steps_per_epoch / dataset_batches)
+    else:
+        repeats = 1
+
+    ds = tf.data.Dataset.from_tensor_slices((x, y))
+    ds = (
+        ds.shuffle(buffer_size=128, reshuffle_each_iteration=True, seed=123)
+        .map(identity, num_parallel_calls=tf.data.AUTOTUNE)
+        .repeat(repeats)
+        .batch(batch_size)
+        .prefetch(tf.data.AUTOTUNE)
+    )
 
     # Train the model
     print("Starting training...")
@@ -355,7 +381,7 @@ def train(cfg: DictConfig = None, train_ds: tf.data.Dataset = None,
                         # callbacks=callbacks,
                         # verbose=1)
     # history = model.fit(train_ds, verbose=1)
-    history = model.fit(x, y, epochs=3, batch_size=32, verbose=1)
+    history = model.fit(ds, epochs=epochs, verbose=1)
     end_time = timer()
     #save the last epoch history in the log file
     last_epoch=log_last_epoch_history(cfg, output_dir)
