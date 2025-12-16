@@ -68,16 +68,16 @@ def log_per_class_metrics(y_true, y_pred, class_names, prefix="test"):
 
     # log_per_class_metrics(labels, logits, class_names, prefix=f"{name_ds}")
 
-def evaluate_h5_model(model_path: str = None,
+def evaluate_keras_model(model_path: str = None,
                       eval_ds: tf.data.Dataset = None,
                       class_names: list = None,
                       output_dir: str = None,
                       name_ds: str = 'test_set') -> float:
     """
-    Evaluates a trained Keras model saved in .h5 format on the provided test data.
+    Evaluates a trained Keras model saved in .keras format on the provided test data.
 
     Args:
-        model_path (str): The file path to the .h5 model.
+        model_path (str): The file path to the .keras model.
         eval_ds (tf.data.Dataset): The test data to evaluate the model on.
         class_names (list): A list of class names for the confusion matrix.
         output_dir (str): The directory where to save the confusion matrix image.
@@ -86,7 +86,7 @@ def evaluate_h5_model(model_path: str = None,
         float: The accuracy of the model on the test data.
     """
 
-    # Load the .h5 model
+    # Load the keras model
     model = tf.keras.models.load_model(model_path)
     loss = get_loss(len(class_names))
     model.compile(loss=loss, metrics=['accuracy'])
@@ -131,20 +131,21 @@ def evaluate(cfg: DictConfig = None, eval_ds: tf.data.Dataset = None,
     Returns:
         None
     """
-    output_dir = HydraConfig.get().runtime.output_dir
-    class_names = cfg.dataset.class_names
+    raise NotImplementedError
+    # output_dir = HydraConfig.get().runtime.output_dir
+    # class_names = cfg.dataset.class_names
     
-    model_path = model_path_to_evaluate if model_path_to_evaluate else cfg.general.model_path
+    # model_path = model_path_to_evaluate if model_path_to_evaluate else cfg.general.model_path
 
-    try:
-        # Check if the model is a TensorFlow Lite model
-        file_extension = Path(model_path).suffix
-        if file_extension == '.h5':
-            count_h5_parameters(output_dir=output_dir, 
-                                model_path=model_path)
-            # Evaluate Keras model
-            evaluate_h5_model(model_path=model_path, eval_ds=eval_ds,
-                              class_names=class_names, output_dir=output_dir, name_ds=name_ds)
-    except Exception:
-        raise ValueError("Model accuracy evaluation failed because of wrong model type!\n",
-                         f"Received model path: {model_path}")
+    # try:
+        # # Check if the model is a TensorFlow Lite model
+        # file_extension = Path(model_path).suffix
+        # if file_extension == '.h5':
+            # count_h5_parameters(output_dir=output_dir, 
+                                # model_path=model_path)
+            # # Evaluate Keras model
+            # evaluate_h5_model(model_path=model_path, eval_ds=eval_ds,
+                              # class_names=class_names, output_dir=output_dir, name_ds=name_ds)
+    # except Exception:
+        # raise ValueError("Model accuracy evaluation failed because of wrong model type!\n",
+                         # f"Received model path: {model_path}")
