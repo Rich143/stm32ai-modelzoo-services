@@ -115,6 +115,12 @@ def set_dropout_rate(model: tf.keras.Model, dropout_rate: float = None) -> None:
                              "attribute in the configuration file\nThe model does not include "
                              "a dropout layer.")
 
+def get_cosine_decay_lr_schedule(args):
+    return tf.keras.optimizers.schedules.CosineDecay(
+        initial_learning_rate=args.initial_lr,
+        decay_steps=args.decay_steps,
+        alpha=args.end_lr_fraction
+    )
 
 def get_optimizer(cfg: DictConfig) -> tf.keras.optimizers:
     """
@@ -134,31 +140,31 @@ def get_optimizer(cfg: DictConfig) -> tf.keras.optimizers:
         tf.keras.optimizers: the Keras optimizer object.
     """
     message = "\nPlease check the 'training.optimizer' section of your configuration file."
-    if type(cfg) != DefaultMunch:
-        raise ValueError(f"\nInvalid syntax for optimizer{message}")
+    # if type(cfg) != DefaultMunch:
+        # raise ValueError(f"\nInvalid syntax for optimizer{message}")
     optimizer_name = list(cfg.keys())[0]
     optimizer_args = cfg[optimizer_name]
+    lr = None
 
-    # Get the optimizer
-    if not optimizer_args:
-        # The optimizer has no arguments.
-        optimizer_text = f"tf.keras.optimizers.{optimizer_name}()"
-    else:
+    if optimizer_args:
         if type(optimizer_args) != DefaultMunch:
             raise ValueError(f"\nInvalid syntax for `{optimizer_name}` optimizer arguments{message}")
-        text = f"tf.keras.optimizers.{optimizer_name}("
-        # Collect the arguments
-        for k, v in optimizer_args.items():
-            if type(v) == str:
-                text += f'{k}=r"{v}", '
+
+        if "learning_rate_schedule" in optimizer_args:
+            lr_schedule_args = optimizer_args["learning_rate_schedule"]
+            # The optimizer has a learning rate scheduler.
+            lr_schedule_name = lr_schedule_args["name"]
+
+            if lr_schedule_name == "LRCosineDecay":
+                lr_scheduler = get_cosine_decay_lr_schedule(lr_schedule_args)
             else:
-                text += f'{k}={v}, '
-        optimizer_text = text[:-2] + ')'
+                raise ValueError(f"\nUnknown learning rate scheduler `{lr_schedule_name}`{message}")
 
-    try:
-        optimizer = eval(optimizer_text)
-    except ValueError as val_err:
-        raise ValueError(f"\nThe optimizer name `{optimizer_name}` is unknown or,"
-                         f"the arguments are invalid, got:\n{optimizer_text}.{message}") from val_err
+            lr = lr_scheduler
+
+    if optimizer_name == 'Adam':
+        optimizer = tf.keras.optimizers.Adam(learning_rate=lr)
+    else:
+        raise ValueError(f"\nUnknown optimizer `{optimizer_name}`{message}")
+
     return optimizer
-

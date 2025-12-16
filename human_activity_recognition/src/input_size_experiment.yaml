@@ -55,14 +55,13 @@ training:
   steps_per_epoch: 5000
   optimizer:
     Adam:
+      learning_rate_schedule:
+        name: LRCosineDecay
+        initial_lr: 0.001
+        decay_steps: 50
+        end_lr_fraction: 0.001 # (ends at 1e-5)
       #learning_rate: 0.01
   callbacks:
-    LRCosineDecay:
-       initial_lr: 0.001   # Initial learning rate.
-       hold_steps: 0      # The number of epochs to hold the learning rate constant between two drops.
-       decay_steps: 50    # the number of steps to decay over following a cosine function
-       end_lr: 1e-5        # The learning rate value reached at the end of the cosine decay phase. 
-       verbose: 1          # Verbosity (0 or 1). If set to 1, the learning rate value is printed at the beginning of each epoch.
     EarlyStopping:
       monitor: val_accuracy
       restore_best_weights: true
