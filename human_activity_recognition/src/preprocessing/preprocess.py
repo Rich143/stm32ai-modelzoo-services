@@ -59,6 +59,7 @@ def segment_presplit_dataset_using_config(train_ds: pd.DataFrame,
         input_shape=cfg.training.model.input_shape,
         seed=cfg.dataset.seed,
         batch_size=cfg.training.batch_size,
+        steps_per_epoch=cfg.training.steps_per_epoch,
         gaussian_noise=cfg.preprocessing.gaussian_noise,
         gaussian_std=cfg.preprocessing.gaussian_std,
         to_cache=to_cache
@@ -180,6 +181,7 @@ def build_train_ds(train_x: np.ndarray,
                    train_y: np.ndarray,
                    batch_size: int,
                    seed: int,
+                   steps_per_epoch: int,
                    gaussian_noise: bool = False,
                    gaussian_std: float = 0,
                    to_cache: bool = False
@@ -195,38 +197,35 @@ def build_train_ds(train_x: np.ndarray,
     num_samples = train_x.shape[0]
     dataset_batches = int(num_samples / batch_size)
 
-    steps_per_epoch = 1024
     if dataset_batches < steps_per_epoch:
         repeats = ceil(steps_per_epoch / dataset_batches)
     else:
         repeats = 1
 
-    train_ds = (train_ds.repeat(repeats)
+    train_ds = (train_ds.shuffle(train_x.shape[0],
+                                 reshuffle_each_iteration=True,
+                                 seed=seed)
+                .repeat(repeats)
                 .batch(batch_size))
-    # train_ds = (train_ds.shuffle(train_x.shape[0],
-                                 # reshuffle_each_iteration=True,
-                                 # seed=seed)
-                # .repeat()
-                # .batch(batch_size))
 
     callbacks = []
 
-    # if gaussian_noise:
-        # noise_cfg = NoiseConfig(gaussian_std, seed)
+    if gaussian_noise:
+        noise_cfg = NoiseConfig(gaussian_std, seed)
 
-        # callbacks.append(UpdateEpoch(noise_cfg))
+        callbacks.append(UpdateEpoch(noise_cfg))
 
-        # # Adds in a batch idx to use with the stateless random number generator
-        # train_ds = train_ds.enumerate()
-        # train_ds = train_ds.map(make_stateless_noise_fn(noise_cfg),
-                                # num_parallel_calls=tf.data.AUTOTUNE)
-        # mlflow.log_params({"gaussian_noise": True})
-        # mlflow.log_params({"gaussian_std": gaussian_std})
-    # else:
-        # mlflow.log_params({"gaussian_noise": False})
-        # mlflow.log_params({"gaussian_std": 0})
+        # Adds in a batch idx to use with the stateless random number generator
+        train_ds = train_ds.enumerate()
+        train_ds = train_ds.map(make_stateless_noise_fn(noise_cfg),
+                                num_parallel_calls=tf.data.AUTOTUNE)
+        mlflow.log_params({"gaussian_noise": True})
+        mlflow.log_params({"gaussian_std": gaussian_std})
+    else:
+        mlflow.log_params({"gaussian_noise": False})
+        mlflow.log_params({"gaussian_std": 0})
 
-    # train_ds = train_ds.prefetch(tf.data.AUTOTUNE)
+    train_ds = train_ds.prefetch(tf.data.AUTOTUNE)
 
     return train_ds, callbacks
 
@@ -237,6 +236,7 @@ def segment_presplit_dataset(train_ds: pd.DataFrame,
                              input_shape: Tuple,
                              seed: int,
                              batch_size: int,
+                             steps_per_epoch: int,
                              gaussian_noise: bool = False,
                              gaussian_std: float = 0,
                              to_cache: bool = False
@@ -278,6 +278,7 @@ def segment_presplit_dataset(train_ds: pd.DataFrame,
                               train_y=train_y,
                               batch_size=batch_size,
                               seed=seed,
+                              steps_per_epoch=steps_per_epoch,
                               gaussian_noise=gaussian_noise,
                               gaussian_std=gaussian_std,
                               to_cache=to_cache)

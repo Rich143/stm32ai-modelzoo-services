@@ -23,24 +23,22 @@ experiment:
     num_runs_per_input_len: 3
 
 dataset:
-  names: [pamap2]
-  paths: [../datasets/PAMAP2_Dataset]
+  names: [pamap2, harth]
+  paths: [../datasets/PAMAP2_Dataset, ../datasets/harth]
   class_names: [stationary, walking, running, cycling] # PAMAP2
   train_val_test_cv_split:
-    test_subjects: [PAMAP2_108]
+    test_subjects: [PAMAP2_108, HARTH_25]
 
     # Subjects to always be used for training, used to increase train set size compared to validation
-    train_subjects: []
-    #train_subjects: [HARTH_26, HARTH_27, HARTH_28, HARTH_29, HARTH_30,
-    #HARTH_31, HARTH_32, HARTH_33, HARTH_34]
+    train_subjects: [HARTH_26, HARTH_27, HARTH_28, HARTH_29, HARTH_30,
+    HARTH_31, HARTH_32, HARTH_33, HARTH_34]
 
     excluded_subjects: [] # Excluded subjects
   seed: 123               # Optional, there is a default seed
 
 preprocessing:
   gravity_rot_sup: True
-  #gaussian_noise: True
-  gaussian_noise: False
+  gaussian_noise: True
   gaussian_std: 0.125 # m/s^2
   sample_rate: 50 # Hz
   mean_group_delay: 123 # Samples
@@ -58,7 +56,7 @@ training:
       learning_rate_schedule:
         name: LRCosineDecay
         initial_lr: 0.001
-        decay_steps: 50
+        decay_steps: 250000 # This is in optimizer steps, which is batches not epochs
         end_lr_fraction: 0.001 # (ends at 1e-5)
       #learning_rate: 0.01
   callbacks:
