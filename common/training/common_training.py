@@ -116,10 +116,15 @@ def set_dropout_rate(model: tf.keras.Model, dropout_rate: float = None) -> None:
                              "a dropout layer.")
 
 def get_cosine_decay_lr_schedule(args):
+    if args.warmup_steps == 0:
+        args.warmup_target = None
+
     return tf.keras.optimizers.schedules.CosineDecay(
         initial_learning_rate=args.initial_lr,
         decay_steps=args.decay_steps,
-        alpha=args.end_lr_fraction
+        alpha=args.end_lr_fraction,
+        warmup_steps=args.warmup_steps,
+        warmup_target=args.warmup_target,
     )
 
 def get_optimizer(cfg: DictConfig) -> tf.keras.optimizers:
