@@ -9,18 +9,12 @@
 import setuptools
 import os
 
-# os.environ["TF_CPP_MIN_LOG_LEVEL"] = "0"    # enable all TF logs
-# os.environ["CUDA_VISIBLE_DEVICES"] = "-1"
-# os.environ["KERAS_BACKEND"] = "tensorflow"
-# os.environ["KERAS_BACKEND_DEBUG"] = "1"
-
 import shutil
 import sys
 from hydra.core.hydra_config import HydraConfig
 import hydra
 import warnings
 warnings.filterwarnings("ignore")
-# # os.environ['TF_CPP_MIN_LOG_LEVEL'] = '3'
 
 import tensorflow as tf
 

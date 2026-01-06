@@ -85,7 +85,7 @@ class PrintLREpoch(tf.keras.callbacks.Callback):
             lr = lr(self.model.optimizer.iterations)
 
         lr = tf.keras.backend.get_value(lr)
-        print(f"Epoch {epoch + 1}: lr = {lr:.6e}")
+        print(f"\n\nEpoch {epoch + 1}: lr = {lr:.6e}")
 
 def get_callbacks(callbacks_dict: DictConfig, output_dir: str = None, logs_dir: str = None,
                   saved_models_dir: str = None) -> List[tf.keras.callbacks.Callback]:
@@ -292,10 +292,15 @@ def train(cfg: DictConfig = None, train_ds: tf.data.Dataset = None,
 
     model.summary()
 
+    if cfg.training.steps_per_execution is None:
+        cfg.training.steps_per_execution = 1
+    print(f"[INFO] : steps_per_execution = {cfg.training.steps_per_execution}")
+
     # Compile the augmented model
     model.compile(loss=get_loss(num_classes=num_classes),
                   metrics=['accuracy'],
-                  optimizer=get_optimizer(cfg=cfg.training.optimizer))
+                  optimizer=get_optimizer(cfg=cfg.training.optimizer),
+                  steps_per_execution=cfg.training.steps_per_execution)
 
     user_config_callbacks = get_callbacks(callbacks_dict=cfg.training.callbacks,
                               output_dir=output_dir,

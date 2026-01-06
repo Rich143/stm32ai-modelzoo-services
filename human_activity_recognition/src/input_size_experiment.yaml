@@ -48,16 +48,17 @@ training:
     name: ign # available choices are [ign, gmp]
     input_shape: (24, 3, 1)
   dropout: 0.2
-  batch_size: 128
+  batch_size: 4096
   epochs: 120
-  steps_per_epoch: 5000
+  steps_per_epoch: 150
+  steps_per_execution: 20
   optimizer:
     Adam:
       learning_rate_schedule:
         name: LRCosineDecay
         initial_lr: 0.001
-        decay_steps: 250000 # This is in optimizer steps, which is batches not epochs
-        end_lr_fraction: 0.001 # (ends at 1e-5)
+        decay_steps: 7500 # This is in optimizer steps, which is batches not epochs
+        end_lr_fraction: 0.01 # (ends at 1e-5)
       #learning_rate: 0.01
   callbacks:
     EarlyStopping:
