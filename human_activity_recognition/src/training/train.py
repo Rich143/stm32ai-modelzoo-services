@@ -76,6 +76,17 @@ def load_model_to_train(cfg, model_path=None, num_classes=None) -> tf.keras.Mode
 
     return model, input_shape
 
+class PrintLREpoch(tf.keras.callbacks.Callback):
+    def on_epoch_end(self, epoch, logs=None):
+        lr = self.model.optimizer.learning_rate
+
+        # Handle schedules
+        if isinstance(lr, tf.keras.optimizers.schedules.LearningRateSchedule):
+            lr = lr(self.model.optimizer.iterations)
+
+        lr = tf.keras.backend.get_value(lr)
+        print(f"Epoch {epoch + 1}: lr = {lr:.6e}")
+
 def get_callbacks(callbacks_dict: DictConfig, output_dir: str = None, logs_dir: str = None,
                   saved_models_dir: str = None) -> List[tf.keras.callbacks.Callback]:
     """
@@ -201,6 +212,17 @@ def log_training_metrics_mlflow(cfg, history, early_stop_cb):
         mlflow.log_metric("best_accuracy", best_train_acc)
 
 
+def get_tensorboard_cb():
+    logdir = "logs/profile"
+
+    tb_cb = tf.keras.callbacks.TensorBoard(
+        log_dir=logdir,
+        histogram_freq=0,
+        profile_batch=(100, 150)  # profile only these batches
+    )    
+
+    return tb_cb
+
 def train(cfg: DictConfig = None, train_ds: tf.data.Dataset = None,
           valid_ds: tf.data.Dataset = None,
           test_ds: Optional[tf.data.Dataset] = None,
@@ -268,15 +290,6 @@ def train(cfg: DictConfig = None, train_ds: tf.data.Dataset = None,
         # Set dropout rate
         set_dropout_rate(model, dropout_rate=cfg.training.dropout)
 
-    # Display a summary of the model
-    # if cfg.training.resume_training_from:
-        # model_summary(model)
-        # if len(model.layers) == 2:
-            # model_summary(model.layers[1])
-        # else:
-            # model_summary(model.layers[2])
-    # else:
-        # model_summary(model)
     model.summary()
 
     # Compile the augmented model
@@ -293,6 +306,9 @@ def train(cfg: DictConfig = None, train_ds: tf.data.Dataset = None,
         callbacks = []
 
     callbacks += user_config_callbacks
+    callbacks.append(PrintLREpoch())
+
+    callbacks.append(get_tensorboard_cb())
 
     early_stop_cb = next((cb for cb in callbacks if isinstance(cb, EarlyStopping)), None)
 
@@ -312,68 +328,17 @@ def train(cfg: DictConfig = None, train_ds: tf.data.Dataset = None,
     if os.path.isfile(runtime_csv_path):
         os.remove(runtime_csv_path)
 
-    # # Test dataset
-    # print("Loading first batch of test data...")
-    # for x, y in train_ds.take(1):
-        # print(f"Loaded first batch of test data: {x.shape}, {y.shape}")
-    # print("Test data loaded")
+    tf.config.run_functions_eagerly(False)
+    # tf.config.optimizer.set_jit(True)
 
-    # print("Testing dataset iteration...")
-    # for i, batch in enumerate(train_ds.take(100)):
-        # print("Batch", i, "loaded")
-    # print("Test dataset iteration complete")
-
-    num_samples = 8192
-
-    # Shapes you specified
-    x_shape = (num_samples, 20, 3, 1)
-    y_shape = (num_samples, 4)
-
-    # Input data (float32 is important for TF)
-    x = np.random.randn(*x_shape).astype(np.float32)
-
-    # Labels — choose ONE of the following depending on your loss
-    # ------------------------------------------------------------
-
-    # Option A: one-hot labels (for categorical_crossentropy)
-    y = np.random.randint(0, 2, size=y_shape).astype(np.float32)
-
-    def identity(x, y):
-        return x, y
-
-    batch_size = 32
-    steps_per_epoch = 1024
-    epochs = 3
-
-    dataset_batches = int(num_samples / batch_size)
-
-    if dataset_batches < steps_per_epoch:
-        repeats = ceil(steps_per_epoch / dataset_batches)
-    else:
-        repeats = 1
-
-    ds = tf.data.Dataset.from_tensor_slices((x, y))
-    ds = (
-        ds.shuffle(buffer_size=128, reshuffle_each_iteration=True, seed=123)
-        .map(identity, num_parallel_calls=tf.data.AUTOTUNE)
-        .repeat(repeats)
-        .batch(batch_size)
-        .prefetch(tf.data.AUTOTUNE)
-    )
+    print("Config eager is : ", tf.config.functions_run_eagerly())
+    print("Config jit is : ", tf.config.optimizer.get_jit())
 
     # Train the model
     print("Starting training...")
     print("Training for {} epochs, steps per epoch : {}, batch size : {}".format(cfg.training.epochs, cfg.training.steps_per_epoch, cfg.training.batch_size))
     start_time = timer()
-    # history = model.fit(train_ds,
-                        # # validation_data=valid_ds,
-                        # epochs=cfg.training.epochs,
-                        # steps_per_epoch=cfg.training.steps_per_epoch,
-                        # callbacks=callbacks,
-                        # verbose=1)
-    # history = model.fit(train_ds, verbose=1)
-    # history = model.fit(ds, epochs=epochs, verbose=1)
-    history = model.fit(train_ds, 
+    history = model.fit(train_ds,
                         validation_data=valid_ds,
                         epochs=cfg.training.epochs,
                         steps_per_epoch=cfg.training.steps_per_epoch,
