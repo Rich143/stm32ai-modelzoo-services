@@ -10,7 +10,7 @@ general:
 operation_mode: experiment
 
 experiment:
-  name: "HAR_CNN_PAMAP2_HARTH_TEST"
+  name: "HAR_CNN_PAMAP2_HARTH"
   tags:
     sweep_axis: "gaussian_noise"
     model: ign
