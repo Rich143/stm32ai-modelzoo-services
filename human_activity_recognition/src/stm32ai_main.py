@@ -55,7 +55,7 @@ from typing import Optional
 from logs_utils import log_to_file
 from experiments.experiment_utils import mlflow_init
 from experiments.input_len_sweep import input_len_experiment
-# from experiments.gaussian_noise_sweep import gaussian_noise_experiment
+from experiments.gaussian_noise_sweep import gaussian_noise_experiment
 
 def chain_tb(cfg: DictConfig = None, train_ds: tf.data.Dataset = None,
              valid_ds: tf.data.Dataset = None, test_ds: tf.data.Dataset = None) -> None:
@@ -90,8 +90,7 @@ def experiment_mode(configs: DictConfig) -> None:
     if configs.experiment.tags.sweep_axis == "input_len":
         input_len_experiment(configs=configs)
     elif configs.experiment.tags.sweep_axis == "gaussian_noise":
-        raise NotImplementedError
-        # gaussian_noise_experiment(configs=configs)
+        gaussian_noise_experiment(configs=configs)
     else:
         raise ValueError("Unknown sweep axis: {}".format(configs.experiment.tags.sweep_axis))
 

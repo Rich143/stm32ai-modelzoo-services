@@ -5,10 +5,11 @@ from datetime import datetime
 import uuid
 
 from omegaconf import DictConfig
-from preprocess import load_and_filter_dataset_from_config, segment_presplit_dataset_using_config
+from preprocess import load_and_preprocess_dataset, segment_presplit_dataset_using_config
 from train import train
 from experiments.experiment_utils import (kfold_train_val_test, start_child_run,
-                                          DatasetTriplet, SubjectListTriplet)
+                                          DatasetTriplet, SubjectListTriplet,
+                                          get_cv_subjects)
 
 def set_mlflow_tags(train_subjects, cv_subjects, test_subjects, excluded_subjects,
                    noise_sweep_start, noise_sweep_end, noise_sweep_step, num_runs_per_step):
@@ -28,8 +29,11 @@ def gaussian_noise_experiment(configs: DictConfig = None) -> None:
     noise_sweep_start, noise_sweep_end, noise_sweep_step, num_runs_per_step = (
         get_experiment_params(cfg=configs))
 
+    dataset = load_and_preprocess_dataset(cfg=configs)
+
     train_subjects, cv_subjects, test_subjects, excluded_subjects = (
-        get_experiment_cv_params(cfg=configs))
+        get_cv_subjects(experiment_cv_config=configs.dataset.train_val_test_cv_split,
+                        dataset=dataset))
 
     seed = configs.dataset.seed
     input_shape = configs.training.model.input_shape
@@ -50,14 +54,10 @@ def gaussian_noise_experiment(configs: DictConfig = None) -> None:
 
     noise_values = np.arange(noise_sweep_start, noise_sweep_end, noise_sweep_step)
 
-    dataset = load_and_filter_dataset_from_config(cfg=configs)
-
     (datasets, subjects_in_folds) = kfold_train_val_test(dataset=dataset,
-                                    subject_col="User",
                                     test_subjects=test_subjects,
                                     always_train_subjects=train_subjects,
                                     cv_subjects=cv_subjects,
-                                    excluded_subjects=excluded_subjects,
                                     n_splits=num_runs_per_step,
                                     random_state=seed,
                                     shuffle=True)
@@ -77,7 +77,7 @@ def log_gaussian_noise_mlflow(cfg):
     mlflow.log_param("gaussian_noise", cfg.preprocessing.gaussian_noise)
     mlflow.log_param("gaussian_std", cfg.preprocessing.gaussian_std)
 
-def get_experiment_params(cfg: DictConfig = None):
+def get_experiment_params(cfg: DictConfig):
     if cfg.experiment.experiment_params is None:
         raise ValueError("experiment_params is None")
 
@@ -99,25 +99,6 @@ def get_experiment_params(cfg: DictConfig = None):
     num_runs_per_step = params_config.num_runs_per_step
 
     return noise_sweep_start, noise_sweep_end, noise_sweep_step, num_runs_per_step
-
-def get_experiment_cv_params(cfg: DictConfig):
-    params_config = cfg.dataset.train_val_test_cv_split
-
-    if params_config.train_subjects is None:
-        raise ValueError("train_subjects is None")
-    if params_config.cv_subjects is None:
-        raise ValueError("cv_subjects is None")
-    if params_config.test_subjects is None:
-        raise ValueError("test_subjects is None")
-    if params_config.excluded_subjects is None:
-        raise ValueError("excluded_subjects is None")
-
-    train_subjects = params_config.train_subjects
-    cv_subjects = params_config.cv_subjects
-    test_subjects = params_config.test_subjects
-    excluded_subjects = params_config.excluded_subjects
-
-    return train_subjects, cv_subjects, test_subjects, excluded_subjects
 
 def child_run(noise_std: float,
               num_runs_per_step: int,

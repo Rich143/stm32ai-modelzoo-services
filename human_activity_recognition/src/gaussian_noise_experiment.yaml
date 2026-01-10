@@ -1,69 +1,67 @@
 general:
   project_name: human_activity_recognition
-  #model_path:  ../../../stm32ai-modelzoo/human_activity_recognition/gmp/ST_pretrainedmodel_public_dataset/WISDM/gmp_wl_48/gmp_wl_48.h5
   logs_dir: logs
   saved_models_dir: saved_models
   display_figures: True
   global_seed: 123
-  gpu_memory_limit: 24
+  gpu_memory_limit: 30
   deterministic_ops: True
 
 operation_mode: experiment
 
 experiment:
-  name: "HAR_CNN_PAMAP2"
+  name: "HAR_CNN_PAMAP2_HARTH_TEST"
   tags:
     sweep_axis: "gaussian_noise"
     model: ign
     study: "gaussian_noise_sweep"
   experiment_params:
     noise_sweep_start: 0
-    noise_sweep_end: 0.32 # exclusive, so slightly over end of 0.6
+    noise_sweep_end: 0.32 # exclusive
     noise_sweep_step: 0.025
-    num_runs_per_step: 5
-
-#operation_mode: training
-#choices=['benchmarking', 'deployment', 'evaluation', 'training', 'chain_tb']
+    num_runs_per_step: 3
+    k_fold_validation: True # [True, False]
 
 dataset:
-  name: pamap2  # wisdm or mobility_v1 or pamap2
+  names: [pamap2, harth]
+  paths: [../datasets/PAMAP2_Dataset, ../datasets/harth]
   class_names: [stationary, walking, running, cycling] # PAMAP2
-  # class_names: [Jogging,Stationary,Stairs,Walking] #[Stationary,Walking,Jogging,Biking] for mobility_v1 #[Jogging,Stationary,Stairs,Walking] for WISDM 
-  # class_names: [lying, sitting, standing, walking, running, cycling, nordic walking, watching tv, computer work, car driving, ascending stairs, descending stairs, vacuum cleaning, ironing, folding laundry, house cleaning, playing soccer, rope jumping, other]
-
-  training_path: ../datasets/PAMAP2_Dataset  # Mandatory for all but deployment, and benchmarking
-  validation_path: # ../datasets/mobility_v1/train.pkl      # Optional
   train_val_test_cv_split:
-    test_subjects: [108,]
-    train_subjects: [103, 104,] # Subjects to always be used for training
-    cv_subjects: [101, 102, 105, 106, 107] # Subjects to be used for training / validation (k_fold)
-    excluded_subjects: []
+    test_subjects: [PAMAP2_108, HARTH_25]
+
+    # Subjects to always be used for training, used to increase train set size compared to validation
+    train_subjects: [HARTH_26, HARTH_27, HARTH_28, HARTH_29, HARTH_30,
+    HARTH_31, HARTH_32, HARTH_33, HARTH_34]
+
+    excluded_subjects: [] # Excluded subjects
   seed: 123               # Optional, there is a default seed
 
 preprocessing:
   gravity_rot_sup: True
-  normalization: False
   gaussian_noise: True
-  gaussian_std: 0.2 # m/s^2
+  gaussian_std: 0.125 # m/s^2
+  sample_rate: 50 # Hz
+  mean_group_delay: 123 # Samples
 
 training:
   model:
     name: ign # available choices are [ign, gmp]
     input_shape: (48, 3, 1)
   dropout: 0.2
-  batch_size: 128
+  batch_size: 4096
   epochs: 120
-  steps_per_epoch: 1000
+  steps_per_epoch: 150
+  steps_per_execution: 20
   optimizer:
     Adam:
-      #learning_rate: 0.01
+      learning_rate_schedule:
+        name: LRCosineDecay
+        initial_lr: 0.001
+        decay_steps: 7500 # This is in optimizer steps, which is batches not epochs
+        end_lr_fraction: 0.01
+        warmup_steps: 750
+        warmup_target: 0.0057 # The learning rate at the end of warmup
   callbacks:
-    LRCosineDecay:
-       initial_lr: 0.001   # Initial learning rate.
-       hold_steps: 0      # The number of epochs to hold the learning rate constant between two drops.
-       decay_steps: 50    # the number of steps to decay over following a cosine function
-       end_lr: 1e-5        # The learning rate value reached at the end of the cosine decay phase. 
-       verbose: 1          # Verbosity (0 or 1). If set to 1, the learning rate value is printed at the beginning of each epoch.
     EarlyStopping:
       monitor: val_accuracy
       restore_best_weights: true

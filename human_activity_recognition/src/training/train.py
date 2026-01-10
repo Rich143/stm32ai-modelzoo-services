@@ -334,10 +334,8 @@ def train(cfg: DictConfig = None, train_ds: tf.data.Dataset = None,
         os.remove(runtime_csv_path)
 
     tf.config.run_functions_eagerly(False)
-    # tf.config.optimizer.set_jit(True)
 
     print("Config eager is : ", tf.config.functions_run_eagerly())
-    print("Config jit is : ", tf.config.optimizer.get_jit())
 
     # Train the model
     print("Starting training...")
