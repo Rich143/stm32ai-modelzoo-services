@@ -81,7 +81,7 @@ def log_gaussian_noise_mlflow(cfg):
         mlflow.log_params({"gaussian_noise": False})
         mlflow.log_params({"gaussian_std": 0})
 
-def get_experiment_params(cfg: DictConfig = None):
+def get_experiment_params(cfg: DictConfig):
     if cfg.experiment.experiment_params is None:
         raise ValueError("experiment_params is None")
 

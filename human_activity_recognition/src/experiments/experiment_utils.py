@@ -49,7 +49,7 @@ def mlflow_init(cfg: DictConfig, tracking_uri: str) -> None:
     params = {"operation_mode": cfg.operation_mode}
     mlflow.log_params(params)
 
-    mlflow.tensorflow.autolog(log_models=False)
+    mlflow.tensorflow.autolog(log_models=True)
 
     mlflow.set_tags(cfg.tags)
 

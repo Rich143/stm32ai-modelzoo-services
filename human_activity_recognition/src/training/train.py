@@ -29,9 +29,10 @@ from cfg_utils import collect_callback_args
 from common_training import set_frozen_layers, set_dropout_rate, get_optimizer
 from models_mgt import get_model, get_loss
 import lr_schedulers
-from evaluate import evaluate_h5_model
+from evaluate import evaluate_keras_model
 from visualize_utils import vis_training_curves
 
+from math import ceil
 
 def load_model_to_train(cfg, model_path=None, num_classes=None) -> tf.keras.Model:
     """
@@ -75,6 +76,16 @@ def load_model_to_train(cfg, model_path=None, num_classes=None) -> tf.keras.Mode
 
     return model, input_shape
 
+class PrintLREpoch(tf.keras.callbacks.Callback):
+    def on_epoch_end(self, epoch, logs=None):
+        lr = self.model.optimizer.learning_rate
+
+        # Handle schedules
+        if isinstance(lr, tf.keras.optimizers.schedules.LearningRateSchedule):
+            lr = lr(self.model.optimizer.iterations)
+
+        lr = tf.keras.backend.get_value(lr)
+        print(f"\n\nEpoch {epoch + 1}: lr = {lr:.6e}")
 
 def get_callbacks(callbacks_dict: DictConfig, output_dir: str = None, logs_dir: str = None,
                   saved_models_dir: str = None) -> List[tf.keras.callbacks.Callback]:
@@ -96,8 +107,8 @@ def get_callbacks(callbacks_dict: DictConfig, output_dir: str = None, logs_dir: 
     The user may use the ModelSaver callback to periodically save the model 
     at the end of an epoch. If it is not used, a default ModelSaver is added
     that saves the model at the end of each epoch. The model file is named
-    last_model.h5 and is saved in the output_dir/saved_models_dir directory
-    (same directory as best_model.h5).
+    last_model.keras and is saved in the output_dir/saved_models_dir directory
+    (same directory as best_model.keras).
 
     The function also checks that there is only one learning rate scheduler
     in the list of callbacks.
@@ -150,7 +161,7 @@ def get_callbacks(callbacks_dict: DictConfig, output_dir: str = None, logs_dir: 
 
     # Add the Keras callback that saves the best model obtained so far
     callback = tf.keras.callbacks.ModelCheckpoint(
-                        filepath=os.path.join(output_dir, saved_models_dir, "best_model.h5"),
+                        filepath=os.path.join(output_dir, saved_models_dir, "best_model.keras"),
                         save_best_only=True,
                         save_weights_only=False,
                         monitor="val_accuracy",
@@ -159,7 +170,7 @@ def get_callbacks(callbacks_dict: DictConfig, output_dir: str = None, logs_dir: 
 
     # Add the Keras callback that saves the model at the end of the epoch
     callback = tf.keras.callbacks.ModelCheckpoint(
-                    filepath=os.path.join(output_dir, saved_models_dir, "last_epoch_model.h5"),
+                    filepath=os.path.join(output_dir, saved_models_dir, "last_epoch_model.keras"),
                     save_best_only=False,
                     save_weights_only=False,
                     monitor="val_accuracy",
@@ -200,6 +211,17 @@ def log_training_metrics_mlflow(cfg, history, early_stop_cb):
         mlflow.log_metric("best_loss", best_train_loss)
         mlflow.log_metric("best_accuracy", best_train_acc)
 
+
+def get_tensorboard_cb():
+    logdir = "logs/profile"
+
+    tb_cb = tf.keras.callbacks.TensorBoard(
+        log_dir=logdir,
+        histogram_freq=0,
+        profile_batch=(100, 150)  # profile only these batches
+    )    
+
+    return tb_cb
 
 def train(cfg: DictConfig = None, train_ds: tf.data.Dataset = None,
           valid_ds: tf.data.Dataset = None,
@@ -268,20 +290,17 @@ def train(cfg: DictConfig = None, train_ds: tf.data.Dataset = None,
         # Set dropout rate
         set_dropout_rate(model, dropout_rate=cfg.training.dropout)
 
-    # Display a summary of the model
-    if cfg.training.resume_training_from:
-        model_summary(model)
-        if len(model.layers) == 2:
-            model_summary(model.layers[1])
-        else:
-            model_summary(model.layers[2])
-    else:
-        model_summary(model)
+    model.summary()
+
+    if cfg.training.steps_per_execution is None:
+        cfg.training.steps_per_execution = 1
+    print(f"[INFO] : steps_per_execution = {cfg.training.steps_per_execution}")
 
     # Compile the augmented model
     model.compile(loss=get_loss(num_classes=num_classes),
                   metrics=['accuracy'],
-                  optimizer=get_optimizer(cfg=cfg.training.optimizer))
+                  optimizer=get_optimizer(cfg=cfg.training.optimizer),
+                  steps_per_execution=cfg.training.steps_per_execution)
 
     user_config_callbacks = get_callbacks(callbacks_dict=cfg.training.callbacks,
                               output_dir=output_dir,
@@ -292,6 +311,9 @@ def train(cfg: DictConfig = None, train_ds: tf.data.Dataset = None,
         callbacks = []
 
     callbacks += user_config_callbacks
+    callbacks.append(PrintLREpoch())
+
+    callbacks.append(get_tensorboard_cb())
 
     early_stop_cb = next((cb for cb in callbacks if isinstance(cb, EarlyStopping)), None)
 
@@ -311,6 +333,10 @@ def train(cfg: DictConfig = None, train_ds: tf.data.Dataset = None,
     if os.path.isfile(runtime_csv_path):
         os.remove(runtime_csv_path)
 
+    tf.config.run_functions_eagerly(False)
+
+    print("Config eager is : ", tf.config.functions_run_eagerly())
+
     # Train the model
     print("Starting training...")
     print("Training for {} epochs, steps per epoch : {}, batch size : {}".format(cfg.training.epochs, cfg.training.steps_per_epoch, cfg.training.batch_size))
@@ -319,7 +345,8 @@ def train(cfg: DictConfig = None, train_ds: tf.data.Dataset = None,
                         validation_data=valid_ds,
                         epochs=cfg.training.epochs,
                         steps_per_epoch=cfg.training.steps_per_epoch,
-                        callbacks=callbacks)
+                        callbacks=callbacks,
+                        verbose=1)
     end_time = timer()
     #save the last epoch history in the log file
     last_epoch=log_last_epoch_history(cfg, output_dir)
@@ -336,7 +363,7 @@ def train(cfg: DictConfig = None, train_ds: tf.data.Dataset = None,
     vis_training_curves(history=history, output_dir=output_dir)
     best_model_path = os.path.join(output_dir,
                                    saved_models_dir,
-                                   "best_model.h5")
+                                   "best_model.keras")
     best_model = tf.keras.models.load_model(best_model_path)
     # Save a copy of the best model if requested
     if cfg.training.trained_model_path:
@@ -345,13 +372,13 @@ def train(cfg: DictConfig = None, train_ds: tf.data.Dataset = None,
 
     log_training_metrics_mlflow(cfg, history, early_stop_cb)
 
-    # Evaluate h5 best model on the validation set
-    evaluate_h5_model(model_path=best_model_path, eval_ds=valid_ds,
+    # Evaluate keras best model on the validation set
+    evaluate_keras_model(model_path=best_model_path, eval_ds=valid_ds,
                       class_names=class_names, output_dir=output_dir, name_ds="validation_set")
 
     if test_ds:
-        # Evaluate h5 best model on the test set
-        evaluate_h5_model(model_path=best_model_path, eval_ds=test_ds,
+        # Evaluate keras best model on the test set
+        evaluate_keras_model(model_path=best_model_path, eval_ds=test_ds,
                           class_names=class_names, output_dir=output_dir, name_ds="test_set")
 
     return best_model_path

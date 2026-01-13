@@ -19,6 +19,7 @@ from tqdm import tqdm
 import statistics
 from tensorflow.keras.utils import to_categorical
 import mlflow
+from math import ceil
 
 CallbackList: TypeAlias = List[tf.keras.callbacks.Callback]
 ds: TypeAlias = tf.data.Dataset[Any]
@@ -58,6 +59,7 @@ def segment_presplit_dataset_using_config(train_ds: pd.DataFrame,
         input_shape=cfg.training.model.input_shape,
         seed=cfg.dataset.seed,
         batch_size=cfg.training.batch_size,
+        steps_per_epoch=cfg.training.steps_per_epoch,
         gaussian_noise=cfg.preprocessing.gaussian_noise,
         gaussian_std=cfg.preprocessing.gaussian_std,
         to_cache=to_cache
@@ -153,7 +155,7 @@ def get_data_segments(dataset: pd.DataFrame,
             labels.append(statistics.mode(dataset['activity_label'][init: end]))
 
     # converting the segments from list to numpy array
-    segments = np.asarray(segments, dtype=np.float)
+    segments = np.asarray(segments, dtype=float)
     segments = segments.reshape(segments.shape[0], segments.shape[1],
                                 segments.shape[2], 1)
     labels = np.asarray(labels)
@@ -179,6 +181,7 @@ def build_train_ds(train_x: np.ndarray,
                    train_y: np.ndarray,
                    batch_size: int,
                    seed: int,
+                   steps_per_epoch: int,
                    gaussian_noise: bool = False,
                    gaussian_std: float = 0,
                    to_cache: bool = False
@@ -191,10 +194,18 @@ def build_train_ds(train_x: np.ndarray,
     if to_cache:
         train_ds = train_ds.cache()
 
+    num_samples = train_x.shape[0]
+    dataset_batches = int(num_samples / batch_size)
+
+    if dataset_batches < steps_per_epoch:
+        repeats = ceil(steps_per_epoch / dataset_batches)
+    else:
+        repeats = 1
+
     train_ds = (train_ds.shuffle(train_x.shape[0],
                                  reshuffle_each_iteration=True,
                                  seed=seed)
-                .repeat()
+                .repeat(repeats)
                 .batch(batch_size))
 
     callbacks = []
@@ -225,6 +236,7 @@ def segment_presplit_dataset(train_ds: pd.DataFrame,
                              input_shape: Tuple,
                              seed: int,
                              batch_size: int,
+                             steps_per_epoch: int,
                              gaussian_noise: bool = False,
                              gaussian_std: float = 0,
                              to_cache: bool = False
@@ -266,6 +278,7 @@ def segment_presplit_dataset(train_ds: pd.DataFrame,
                               train_y=train_y,
                               batch_size=batch_size,
                               seed=seed,
+                              steps_per_epoch=steps_per_epoch,
                               gaussian_noise=gaussian_noise,
                               gaussian_std=gaussian_std,
                               to_cache=to_cache)

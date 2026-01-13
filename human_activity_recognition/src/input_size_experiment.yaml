@@ -10,7 +10,7 @@ general:
 operation_mode: experiment
 
 experiment:
-  name: "HAR_CNN_PAMAP2"
+  name: "HAR_CNN_PAMAP2_HARTH"
   tags:
     sweep_axis: "input_len"
     model: ign
@@ -48,19 +48,20 @@ training:
     name: ign # available choices are [ign, gmp]
     input_shape: (24, 3, 1)
   dropout: 0.2
-  batch_size: 128
+  batch_size: 4096
   epochs: 120
-  steps_per_epoch: 5000
+  steps_per_epoch: 150
+  steps_per_execution: 20
   optimizer:
     Adam:
-      #learning_rate: 0.01
+      learning_rate_schedule:
+        name: LRCosineDecay
+        initial_lr: 0.001
+        decay_steps: 7500 # This is in optimizer steps, which is batches not epochs
+        end_lr_fraction: 0.01
+        warmup_steps: 750
+        warmup_target: 0.0057 # The learning rate at the end of warmup
   callbacks:
-    LRCosineDecay:
-       initial_lr: 0.001   # Initial learning rate.
-       hold_steps: 0      # The number of epochs to hold the learning rate constant between two drops.
-       decay_steps: 50    # the number of steps to decay over following a cosine function
-       end_lr: 1e-5        # The learning rate value reached at the end of the cosine decay phase. 
-       verbose: 1          # Verbosity (0 or 1). If set to 1, the learning rate value is printed at the beginning of each epoch.
     EarlyStopping:
       monitor: val_accuracy
       restore_best_weights: true
