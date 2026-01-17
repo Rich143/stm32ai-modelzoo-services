@@ -21,6 +21,7 @@ import numpy as np
 import tensorflow as tf
 from tensorflow.keras.callbacks import EarlyStopping
 import mlflow
+import keras_tuner
 
 from logs_utils import log_to_file, log_last_epoch_history, LRTensorBoard
 from gpu_utils import check_training_determinism
@@ -31,6 +32,7 @@ from models_mgt import get_model, get_loss
 import lr_schedulers
 from evaluate import evaluate_keras_model
 from visualize_utils import vis_training_curves
+from gmp_tuner import create_build_model as gmp_create_build_model
 
 from math import ceil
 
@@ -219,9 +221,105 @@ def get_tensorboard_cb():
         log_dir=logdir,
         histogram_freq=0,
         profile_batch=(100, 150)  # profile only these batches
-    )    
+    )
 
     return tb_cb
+
+def check_tuner_cfg(cfg):
+    tuner_cfg = cfg.keras_tuner
+    if tuner_cfg is None:
+        raise ValueError("\nPlease check the 'keras_tuner' section of your configuration file.")
+
+    if tuner_cfg.num_conv_layers_min is None:
+        raise ValueError("\nPlease check the 'keras_tuner.num_conv_layers_min' section of your configuration file.")
+
+    if tuner_cfg.num_conv_layers_max is None:
+        raise ValueError("\nPlease check the 'keras_tuner.num_conv_layers_max' section of your configuration file.")
+
+    if tuner_cfg.max_trials is None:
+        raise ValueError("\nPlease check the 'keras_tuner.max_trials' section of your configuration file.")
+
+    if tuner_cfg.executions_per_trial is None:
+        raise ValueError("\nPlease check the 'keras_tuner.executions_per_trial' section of your configuration file.")
+
+def get_early_stopping_cb(cfg: DictConfig):
+    if cfg.training.EarlyStopping is not None:
+        return tf.keras.callbacks.EarlyStopping(
+            monitor=cfg.training.EarlyStopping.monitor,
+            mode=cfg.training.EarlyStopping.mode,
+            patience=cfg.training.EarlyStopping.patience,
+            restore_best_weights=cfg.training.EarlyStopping.restore_best_weights
+        )
+
+def train_keras_tuner(cfg: DictConfig,
+                      train_ds: tf.data.Dataset,
+                      valid_ds: tf.data.Dataset,
+                      test_ds: Optional[tf.data.Dataset] = None,
+                      callbacks: Optional[List[tf.keras.callbacks.Callback]] = None,
+                      run_name: str = "keras_tuner_base") -> str:
+    """
+    Runs Keras Tuner using the provided configuration and datasets.
+
+    Args:
+        cfg (DictConfig): The entire configuration file dictionary.
+        train_ds (tf.data.Dataset): training dataset loader.
+        valid_ds (tf.data.Dataset): validation dataset loader.
+        test_ds (Optional, tf.data.Dataset): test dataset dataset loader.
+        callbacks (Optional, List[tf.keras.callbacks.Callback]): list of callbacks.
+        run_name (str): name of the run
+
+    Returns:
+        Path to the best model obtained
+    """
+    check_tuner_cfg(cfg)
+
+    output_dir = HydraConfig.get().runtime.output_dir
+
+    class_names = cfg.dataset.class_names
+    num_classes = len(class_names)
+
+    early_stop_cb = get_early_stopping_cb(cfg)
+
+    if callbacks is None:
+        callbacks = []
+
+    if early_stop_cb is not None:
+        callbacks.append(early_stop_cb)
+
+    hypermodel = gmp_create_build_model(
+        input_shape=cfg.training.model.input_shape,
+        num_classes=num_classes,
+        dropout=cfg.training.dropout,
+        num_conv_layers_min=cfg.keras_tuner.num_conv_layers_min,
+        num_conv_layers_max=cfg.keras_tuner.num_conv_layers_max
+    )
+
+    tuner = keras_tuner.RandomSearch(
+        hypermodel=hypermodel,
+        objective='val_accuracy',
+        max_trials=cfg.keras_tuner.max_trials,
+        executions_per_trial=cfg.keras_tuner.executions_per_trial,
+        directory=os.path.join(output_dir, "keras_tuner"),
+        project_name="HAR_GMP_TUNER",
+    )
+
+    tuner.search_space_summary()
+
+    tuner.search(train_ds, validation_data=valid_ds,
+                 epochs=cfg.training.epochs, callbacks=callbacks)
+
+    best_model = tuner.get_best_models(num_models=1)[0]
+
+    # Show best model summary
+    print("\nBest model summary:")
+    best_model.summary()
+
+    # Save the best model
+    best_model_path = os.path.join(output_dir, "keras_tuner", "best_model.keras")
+    best_model.save(best_model_path)
+
+    return best_model_path
+
 
 def train(cfg: DictConfig = None, train_ds: tf.data.Dataset = None,
           valid_ds: tf.data.Dataset = None,

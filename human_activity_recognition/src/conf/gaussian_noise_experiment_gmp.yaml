@@ -1,0 +1,98 @@
+general:
+  project_name: human_activity_recognition
+  logs_dir: logs
+  saved_models_dir: saved_models
+  display_figures: True
+  global_seed: 123
+  gpu_memory_limit: 30
+  deterministic_ops: True
+
+operation_mode: experiment
+
+experiment:
+  name: "HAR_CNN_PAMAP2_HARTH"
+  tags:
+    sweep_axis: "gaussian_noise"
+    model: gmp
+    study: "gaussian_noise_sweep"
+  experiment_params:
+    noise_sweep_start: 0
+    noise_sweep_end: 0.32 # exclusive
+    noise_sweep_step: 0.025
+    num_runs_per_step: 3
+    k_fold_validation: True # [True, False]
+
+dataset:
+  names: [pamap2, harth]
+  paths: [../datasets/PAMAP2_Dataset, ../datasets/harth]
+  class_names: [stationary, walking, running, cycling] # PAMAP2
+  train_val_test_cv_split:
+    test_subjects: [PAMAP2_108, HARTH_25]
+
+    # Subjects to always be used for training, used to increase train set size compared to validation
+    train_subjects: [HARTH_26, HARTH_27, HARTH_28, HARTH_29, HARTH_30,
+    HARTH_31, HARTH_32, HARTH_33, HARTH_34]
+
+    excluded_subjects: [] # Excluded subjects
+  seed: 123               # Optional, there is a default seed
+
+preprocessing:
+  gravity_rot_sup: True
+  gaussian_noise: True
+  gaussian_std: 0.125 # m/s^2
+  sample_rate: 50 # Hz
+  mean_group_delay: 123 # Samples
+
+training:
+  model:
+    name: gmp # available choices are [ign, gmp]
+    input_shape: (48, 3, 1)
+  dropout: 0.0
+  batch_size: 4096
+  epochs: 120
+  steps_per_epoch: 150
+  steps_per_execution: 20
+  optimizer:
+    Adam:
+      learning_rate_schedule:
+        name: LRCosineDecay
+        initial_lr: 0.001
+        decay_steps: 7500 # This is in optimizer steps, which is batches not epochs
+        end_lr_fraction: 0.01
+        warmup_steps: 750
+        warmup_target: 0.0057 # The learning rate at the end of warmup
+  callbacks:
+    EarlyStopping:
+      monitor: val_accuracy
+      restore_best_weights: true
+      patience: 20
+
+##  trained_model_path: trained.h5   # Optional, use it if you want to save the best model at the end of the training to a path of your choice
+
+tools:
+   stedgeai:
+      version: 10.0.0
+      optimization: balanced
+      on_cloud: True
+      #path_to_stedgeai: C:/Users/<XXXXX>/STM32Cube/Repository/Packs/STMicroelectronics/X-CUBE-AI/<*.*.*>/Utilities/windows/stedgeai.exe
+      #path_to_stedgeai: /Applications/STMicroelectronics/STM32CubeMX.app/Contents/MacOs/STM32CubeMX/
+      path_to_stedgeai: ~/STM32Cube/Repository/Packs/STMicroelectronics/X-CUBE-AI/8.1.0
+   path_to_cubeIDE: /Applications/STM32CubeIDE.app/Contents/MacOS/STM32CubeIDE
+
+benchmarking:
+  board: B-U585I-IOT02A
+
+deployment:
+  c_project_path: ../../stm32ai_application_code/sensing_thread_x/
+  IDE: GCC
+  verbosity: 1
+  hardware_setup:
+    serie: STM32U5
+    board: B-U585I-IOT02A
+
+mlflow:
+  uri: http://127.0.0.1:5000
+
+hydra:
+  run:
+    dir: ./experiments_outputs/${now:%Y_%m_%d_%H_%M_%S}

@@ -118,13 +118,14 @@ def get_config(config_data: DictConfig) -> DefaultMunch:
     mode_groups = DefaultMunch.fromDict({
         "training": ["training", "chain_tb"],
         "experiment": ["training"],
+        "keras_tuner": ["training"],
         "evaluation": ["evaluation"],
         "benchmarking": ["benchmarking", "chain_tb"],
         "deployment": ["deployment"],
         "quantization": []
     })
-    mode_choices = ["training", "experiment", "evaluation", "deployment", "benchmarking", "chain_tb"]
-    legal = ["general", "operation_mode", "experiment", "dataset", "preprocessing", "training",
+    mode_choices = ["training", "experiment", "keras_tuner", "evaluation", "deployment", "benchmarking", "chain_tb"]
+    legal = ["general", "operation_mode", "experiment", "keras_tuner", "dataset", "preprocessing", "training",
              "prediction", "tools", "benchmarking", "deployment", "mlflow"]
     parse_top_level(cfg,
                     mode_groups=mode_groups,

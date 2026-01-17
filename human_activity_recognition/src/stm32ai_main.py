@@ -56,6 +56,7 @@ from logs_utils import log_to_file
 from experiments.experiment_utils import mlflow_init
 from experiments.input_len_sweep import input_len_experiment
 from experiments.gaussian_noise_sweep import gaussian_noise_experiment
+from experiments.keras_tuner_gmp import run_gmp_tuner
 
 def chain_tb(cfg: DictConfig = None, train_ds: tf.data.Dataset = None,
              valid_ds: tf.data.Dataset = None, test_ds: tf.data.Dataset = None) -> None:
@@ -93,6 +94,10 @@ def experiment_mode(configs: DictConfig) -> None:
         gaussian_noise_experiment(configs=configs)
     else:
         raise ValueError("Unknown sweep axis: {}".format(configs.experiment.tags.sweep_axis))
+
+def keras_tuner_mode(configs: DictConfig, ) -> None:
+    if configs.keras_tuner.experiment_name == 'gmp_tuner':
+        run_gmp_tuner(configs)
 
 def process_mode(mode: str = None,
                  configs: DictConfig = None,
@@ -162,7 +167,7 @@ def process_mode(mode: str = None,
     log_to_file(configs.output_dir, f'operation finished: {mode}')
 
 
-@hydra.main(version_base=None, config_path="", config_name="user_config")
+@hydra.main(version_base=None, config_path="conf", config_name="user_config")
 def main(cfg: DictConfig) -> None:
     """
     Main entry point of the script.
@@ -189,8 +194,6 @@ def main(cfg: DictConfig) -> None:
     cfg = get_config(cfg)
     cfg.output_dir = HydraConfig.get().run.dir
 
-    # TODO! use the config file for experiment name
-    mlflow_init(cfg.experiment, cfg.mlflow.uri)
 
     # Seed global seed for random generators
     seed = get_random_seed(cfg)
@@ -200,14 +203,25 @@ def main(cfg: DictConfig) -> None:
 
     # Extract the mode from the command-line arguments
     mode = cfg.operation_mode
-    valid_modes = ['training',  'experiment', 'evaluation', 'chain_tb']
+    valid_modes = ['experiment',  'keras_tuner']
+    # valid_modes = ['training',  'experiment',  'keras_tuner', 'evaluation', 'chain_tb']
     if mode in valid_modes:
         if mode == 'experiment':
             print("[INFO] Starting experiment mode")
+
+            # TODO: If mlflow is used for other modes, need to init it separately
+            mlflow_init(cfg.experiment, cfg.mlflow.uri)
+
             # logging the operation_mode in the output_dir/stm32ai_main.log file
             log_to_file(cfg.output_dir, f'operation_mode: {mode}')
             experiment_mode(configs=cfg)
             print('[INFO] : Experiment complete.')
+        elif mode == 'keras_tuner':
+            print("[INFO] Starting keras tuner mode")
+            # logging the operation_mode in the output_dir/stm32ai_main.log file
+            log_to_file(cfg.output_dir, f'operation_mode: {mode}')
+            keras_tuner_mode(configs=cfg)
+            print('[INFO] : Keras tuner complete.')
         else:
             raise NotImplementedError
             # # Perform further processing based on the selected mode
