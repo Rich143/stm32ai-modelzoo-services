@@ -27,12 +27,14 @@ from logs_utils import log_to_file, log_last_epoch_history, LRTensorBoard
 from gpu_utils import check_training_determinism
 from models_utils import model_summary
 from cfg_utils import collect_callback_args
+from cfg_utils import get_random_seed
 from common_training import set_frozen_layers, set_dropout_rate, get_optimizer
 from models_mgt import get_model, get_loss
 import lr_schedulers
 from evaluate import evaluate_keras_model
 from visualize_utils import vis_training_curves
 from gmp_tuner import create_build_model as gmp_create_build_model
+from data_load_helpers import global_activity_name_to_id
 
 from math import ceil
 
@@ -214,7 +216,7 @@ def log_training_metrics_mlflow(cfg, history, early_stop_cb):
         mlflow.log_metric("best_accuracy", best_train_acc)
 
 
-def get_tensorboard_cb():
+def get_tensorboard_profile_cb():
     logdir = "logs/profile"
 
     tb_cb = tf.keras.callbacks.TensorBoard(
@@ -251,9 +253,17 @@ def get_early_stopping_cb(cfg: DictConfig):
             restore_best_weights=cfg.training.EarlyStopping.restore_best_weights
         )
 
+def get_keras_tuner_tensorboard_cb(logDir: str):
+    tb_cb = tf.keras.callbacks.TensorBoard(
+        log_dir=logDir,
+    )
+
+    return tb_cb
+
 def train_keras_tuner(cfg: DictConfig,
                       train_ds: tf.data.Dataset,
                       valid_ds: tf.data.Dataset,
+                      class_weights: Dict[int, float],
                       test_ds: Optional[tf.data.Dataset] = None,
                       callbacks: Optional[List[tf.keras.callbacks.Callback]] = None,
                       run_name: str = "keras_tuner_base") -> str:
@@ -279,34 +289,48 @@ def train_keras_tuner(cfg: DictConfig,
     num_classes = len(class_names)
 
     early_stop_cb = get_early_stopping_cb(cfg)
+    tb_cb = get_keras_tuner_tensorboard_cb(output_dir)
 
     if callbacks is None:
         callbacks = []
 
     if early_stop_cb is not None:
+        print("[INFO] Adding early stopping callback")
         callbacks.append(early_stop_cb)
+    if tb_cb is not None:
+        print("[INFO] Adding tensorboard callback")
+        callbacks.append(tb_cb)
 
     hypermodel = gmp_create_build_model(
         input_shape=cfg.training.model.input_shape,
         num_classes=num_classes,
         dropout=cfg.training.dropout,
         num_conv_layers_min=cfg.keras_tuner.num_conv_layers_min,
-        num_conv_layers_max=cfg.keras_tuner.num_conv_layers_max
+        num_conv_layers_max=cfg.keras_tuner.num_conv_layers_max,
+        max_maccs=cfg.keras_tuner.max_maccs,
+        max_num_params=cfg.keras_tuner.max_num_params,
     )
 
     tuner = keras_tuner.RandomSearch(
         hypermodel=hypermodel,
-        objective='val_accuracy',
+        objective=keras_tuner.Objective(
+            "val_auc_pr",
+            direction="max"
+        ),
         max_trials=cfg.keras_tuner.max_trials,
         executions_per_trial=cfg.keras_tuner.executions_per_trial,
         directory=os.path.join(output_dir, "keras_tuner"),
+        max_retries_per_trial=3,
+        max_consecutive_failed_trials=8,
         project_name="HAR_GMP_TUNER",
+        seed=get_random_seed(cfg),
     )
 
     tuner.search_space_summary()
 
     tuner.search(train_ds, validation_data=valid_ds,
-                 epochs=cfg.training.epochs, callbacks=callbacks)
+                 epochs=cfg.training.epochs, callbacks=callbacks,
+                 class_weight=class_weights)
 
     best_model = tuner.get_best_models(num_models=1)[0]
 
@@ -411,7 +435,7 @@ def train(cfg: DictConfig = None, train_ds: tf.data.Dataset = None,
     callbacks += user_config_callbacks
     callbacks.append(PrintLREpoch())
 
-    callbacks.append(get_tensorboard_cb())
+    callbacks.append(get_tensorboard_profile_cb())
 
     early_stop_cb = next((cb for cb in callbacks if isinstance(cb, EarlyStopping)), None)
 

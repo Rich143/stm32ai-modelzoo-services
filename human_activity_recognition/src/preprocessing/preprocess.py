@@ -161,6 +161,12 @@ def get_data_segments(dataset: pd.DataFrame,
     labels = np.asarray(labels)
     return segments, labels
 
+def one_hot_encoding_from_activity_ids(activity_ids, class_names):
+    # one-hot encode labels, convert from id to name first so that the order is
+    # defined based on the config file
+    return to_categorical([class_names.index(global_activity_id_to_name(id))
+                            for id in activity_ids], num_classes=len(class_names))
+
 def segment_and_get_labels(dataset: pd.DataFrame,
                            class_names: List[str],
                            seq_len: int):
@@ -170,10 +176,9 @@ def segment_and_get_labels(dataset: pd.DataFrame,
     segments, labels = get_data_segments(dataset=dataset,
                                          seq_len=seq_len)
 
-    # one-hot encode labels, convert from id to name first so that the order is
-    # defined based on the config file
-    labels = to_categorical([class_names.index(global_activity_id_to_name(label))
-                            for label in labels], num_classes=len(class_names))
+    # one-hot encode labels
+    labels = one_hot_encoding_from_activity_ids(activity_ids=labels,
+                                                class_names=class_names)
 
     return segments, labels
 
