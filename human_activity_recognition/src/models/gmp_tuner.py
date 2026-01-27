@@ -58,7 +58,7 @@ def create_build_model(input_shape: tuple[int] = (24, 3, 1),
 
         layer_1_conf = get_layer_conf_hp(
             layer_name='layer_1',
-            num_filters=[4, 8, 16, 24],
+            num_filters=[2, 4, 8, 16, 24],
             kernel_sizes=[3, 5, 7],
             max_pooling_sizes=None,
             optional_layer=False,
@@ -67,18 +67,18 @@ def create_build_model(input_shape: tuple[int] = (24, 3, 1),
 
         layer_2_conf = get_layer_conf_hp(
             layer_name='layer_2',
-            num_filters=[4, 8, 16, 24],
+            num_filters=[2, 4, 8, 16, 24],
             kernel_sizes=[3, 5, 7],
-            max_pooling_sizes=[2, 4],
+            max_pooling_sizes=[1, 2, 4],
             optional_layer=False,
             hp=hp
         )
 
         layer_3_conf = get_layer_conf_hp(
             layer_name='layer_3',
-            num_filters=[4, 8, 16, 24],
+            num_filters=[2, 4, 8, 16, 24],
             kernel_sizes=[3, 5, 7],
-            max_pooling_sizes=[2, 4],
+            max_pooling_sizes=[1, 2, 4],
             optional_layer=True,
             hp=hp
         )
@@ -116,6 +116,41 @@ def get_f1_macro_metric():
             name="f1_macro"
         )
 
+def update_and_check_size_conv_to_max_pool(
+    current_size: int,
+    kernel_size: int,
+    max_pooling_size: int,
+    layer_name: str,
+):
+    # Update current size after convolution
+    current_size = current_size - kernel_size + 1
+
+    # Check if max pool is valid
+    if max_pooling_size > current_size:
+        raise kt.errors.FailedTrialError(
+            f"Model invalid at layer {layer_name}: max_pooling_size > current_size: {max_pooling_size} > {current_size}"
+        )
+
+    return current_size
+
+def update_and_check_size_max_pool_to_conv(
+    current_size: int,
+    max_pooling_size: int,
+    kernel_size: int,
+    layer_name: str,
+):
+    # Update current size after max pooling
+    current_size //= max_pooling_size
+
+    # Check if convolution is valid
+    if kernel_size > current_size:
+        raise kt.errors.FailedTrialError(
+            f"Model invalid at layer {layer_name}: kernel_size > current_size: {kernel_size} > {current_size}"
+        )
+
+    return current_size
+
+
 def get_gmp(input_shape: tuple[int] = (24, 3, 1),
             num_classes: int = 4,
             layer_1_conf: ConvLayerConfig = ConvLayerConfig(),
@@ -133,6 +168,14 @@ def get_gmp(input_shape: tuple[int] = (24, 3, 1),
         - keras.Model object, the gmp model.
     """
 
+    # Check max pooling sizes
+    if layer_1_conf.max_pooling_size:
+        raise ValueError("Max pooling for first layer not supported")
+    if layer_2_conf.max_pooling_size is None:
+        raise ValueError("Max pooling for second layer required")
+    if layer_3_conf.max_pooling_size is None:
+        raise ValueError("Max pooling for third layer required")
+
     current_size = input_shape[0]
 
     model = tf.keras.Sequential()
@@ -142,10 +185,9 @@ def get_gmp(input_shape: tuple[int] = (24, 3, 1),
         layers.Input(shape=input_shape)
     )
 
-    if layer_1_conf.max_pooling_size:
-        raise ValueError("Max pooling for first layer not supported")
-
-    # First Conv + BatchNorm block
+    ##
+    # Layer 1
+    ##
     model.add(layers.BatchNormalization())
     model.add(layers.Conv2D(layer_1_conf.num_filters,
                             kernel_size=(layer_1_conf.kernel_size, 1),
@@ -154,25 +196,27 @@ def get_gmp(input_shape: tuple[int] = (24, 3, 1),
                             padding="valid",
                             activation="relu"))
 
-    # Update Size after Conv layer
-    current_size -= (layer_1_conf.kernel_size - 1)
+    
+    current_size = update_and_check_size_conv_to_max_pool(
+        current_size=current_size,
+        kernel_size=layer_1_conf.kernel_size,
+        max_pooling_size=layer_2_conf.max_pooling_size,
+        layer_name="layer_2",
+    )
 
-    # Check Size
-    if layer_2_conf.max_pooling_size > current_size:
-        raise kt.errors.FailedTrialError(
-            f"Model invalid, layer_2_conf.max_pooling_size > current_size (layer 2): {layer_2_conf.max_pooling_size} > {current_size}"
-        )
+    ##
+    # Layer 2
+    ##
 
-    model.add(layers.MaxPooling2D(pool_size=(layer_2_conf.max_pooling_size, 1)))
+    if layer_2_conf.max_pooling_size > 1:
+        model.add(layers.MaxPooling2D(pool_size=(layer_2_conf.max_pooling_size, 1)))
 
-    # Update Size after Max Pool layer
-    current_size //= layer_2_conf.max_pooling_size
-
-    # Check Size
-    if current_size <= layer_2_conf.kernel_size:
-        raise kt.errors.FailedTrialError(
-            f"Model invalid, current_size <= layer_2_conf.kernel_size (layer 2): {current_size} >= {layer_2_conf.kernel_size}"
-        )
+    current_size = update_and_check_size_max_pool_to_conv(
+        current_size=current_size,
+        max_pooling_size=layer_2_conf.max_pooling_size,
+        kernel_size=layer_2_conf.kernel_size,
+        layer_name="layer_2",
+    )
 
     model.add(layers.BatchNormalization())
     model.add(layers.Conv2D(layer_2_conf.num_filters,
@@ -182,32 +226,38 @@ def get_gmp(input_shape: tuple[int] = (24, 3, 1),
                             padding="valid",
                             activation="relu"))
 
+    ##
+    # Layer 3
+    ##
     if layer_3_conf.optional_layer:
-        current_size -= (layer_2_conf.kernel_size - 1)
+        current_size = update_and_check_size_conv_to_max_pool(
+            current_size=current_size,
+            kernel_size=layer_2_conf.kernel_size,
+            max_pooling_size=layer_3_conf.max_pooling_size,
+            layer_name="layer_3",
+        )
 
-        # Check Size
-        if layer_3_conf.max_pooling_size > current_size:
-            raise kt.errors.FailedTrialError(
-                f"Model invalid, layer_3_conf.max_pooling_size > current_size (layer 3): {layer_3_conf.max_pooling_size} > {current_size}"
-            )
+        if layer_3_conf.max_pooling_size > 1:
+            model.add(layers.MaxPooling2D(pool_size=(layer_3_conf.max_pooling_size, 1)))
 
-        model.add(layers.MaxPooling2D(pool_size=(layer_3_conf.max_pooling_size, 1)))
-
-        current_size //= layer_3_conf.max_pooling_size
-
-        # Check Size
-        if current_size <= layer_3_conf.kernel_size:
-            raise kt.errors.FailedTrialError(
-                f"Model invalid, current_size <= layer_3_conf.kernel_size (layer 3): {current_size} >= {layer_3_conf.kernel_size}"
-            )
+        current_size = update_and_check_size_max_pool_to_conv(
+            current_size=current_size,
+            max_pooling_size=layer_3_conf.max_pooling_size,
+            kernel_size=layer_3_conf.kernel_size,
+            layer_name="layer_3",
+        )
 
         model.add(layers.BatchNormalization())
         model.add(layers.Conv2D(layer_3_conf.num_filters,
-                                kernel_size=(layer_3_conf.kernel_size, 3),
+                                kernel_size=(layer_3_conf.kernel_size, 1),
                                 strides=(1, 1),
                                 kernel_initializer='glorot_uniform',
                                 padding="valid",
                                 activation="relu"))
+
+    ##
+    # MaxPool + Output Layers
+    ##
 
     # maxpooling
     model.add(

@@ -312,7 +312,7 @@ def train_keras_tuner(cfg: DictConfig,
         executions_per_trial=cfg.keras_tuner.executions_per_trial,
         directory=os.path.join(output_dir, "keras_tuner"),
         max_retries_per_trial=3,
-        max_consecutive_failed_trials=8,
+        max_consecutive_failed_trials=20,
         project_name="HAR_GMP_TUNER",
         seed=get_random_seed(cfg),
     )
