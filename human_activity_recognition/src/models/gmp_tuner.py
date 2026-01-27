@@ -10,24 +10,87 @@
 
 import tensorflow as tf
 import tensorflow.keras.layers as layers
+from dataclasses import dataclass
+from typing import Optional, List
+
 from keras_tuner_model_utils import check_model_compute_budget
 import keras_tuner as kt
 
+@dataclass
+class ConvLayerConfig:
+    kernel_size: int = 3
+    num_filters: int = 16
+    max_pooling_size: Optional[int] = 2  # Pooling done BEFORE the layer. None → no max pooling
+    optional_layer: Optional[bool] = False
+
 def create_build_model(input_shape: tuple[int] = (24, 3, 1),
                        num_classes: int = 4,
-                       dropout: float = 0.5,
-                       num_conv_layers_min: int = 1,
-                       num_conv_layers_max: int = 5,
                        max_maccs: int = 0,
                        max_num_params: int = 0):
-    def build_model(hp):
-        num_conv_layers = hp.Int('num_conv_layers',
-                                 min_value=num_conv_layers_min,
-                                 max_value=num_conv_layers_max, step=1)
+    def get_layer_conf_hp(layer_name: str,
+                          num_filters: List[int], 
+                          kernel_sizes: List[int],
+                          max_pooling_sizes: Optional[List[int]],
+                          optional_layer: bool,
+                          hp) -> ConvLayerConfig:
+        kernel_size_param = hp.Choice(f'{layer_name} kernel_size', values=kernel_sizes)
+        num_filters_param = hp.Choice(f'{layer_name} num_filters', values=num_filters)
 
-        model = get_gmp(input_shape=input_shape,
-                        num_classes=num_classes, dropout=dropout,
-                        num_conv_layers=num_conv_layers)
+        if max_pooling_sizes is None:
+            max_pooling_size_param = None
+        else:
+            max_pooling_size_param = hp.Choice(f'{layer_name} max_pooling_size', values=max_pooling_sizes)
+
+        if optional_layer:
+            optional_layer_param = hp.Boolean(f'{layer_name} optional_layer')
+        else:
+            optional_layer_param = None
+
+        return ConvLayerConfig(
+            kernel_size=kernel_size_param,
+            num_filters=num_filters_param,
+            max_pooling_size=max_pooling_size_param,
+            optional_layer=optional_layer_param
+        )
+
+
+    def build_model(hp):
+
+        layer_1_conf = get_layer_conf_hp(
+            layer_name='layer_1',
+            num_filters=[4, 8, 16, 24],
+            kernel_sizes=[3, 5, 7],
+            max_pooling_sizes=None,
+            optional_layer=False,
+            hp=hp
+        )
+
+        layer_2_conf = get_layer_conf_hp(
+            layer_name='layer_2',
+            num_filters=[4, 8, 16, 24],
+            kernel_sizes=[3, 5, 7],
+            max_pooling_sizes=[2, 4],
+            optional_layer=False,
+            hp=hp
+        )
+
+        layer_3_conf = get_layer_conf_hp(
+            layer_name='layer_3',
+            num_filters=[4, 8, 16, 24],
+            kernel_sizes=[3, 5, 7],
+            max_pooling_sizes=[2, 4],
+            optional_layer=True,
+            hp=hp
+        )
+
+
+        model = get_gmp(
+            input_shape=input_shape,
+            num_classes=num_classes,
+            layer_1_conf=layer_1_conf,
+            layer_2_conf=layer_2_conf,
+            layer_3_conf=layer_3_conf,
+        )
 
         if max_maccs and max_num_params:
             if not check_model_compute_budget(model, max_maccs,
@@ -49,8 +112,10 @@ def get_pr_auc_metric():
 
 def get_gmp(input_shape: tuple[int] = (24, 3, 1),
             num_classes: int = 4,
-            dropout: float = 0.5,
-            num_conv_layers: int = 2):
+            layer_1_conf: ConvLayerConfig = ConvLayerConfig(),
+            layer_2_conf: ConvLayerConfig = ConvLayerConfig(),
+            layer_3_conf: ConvLayerConfig = ConvLayerConfig(),
+           ):
     """
     Builds and returns an gmp model for human_activity_recognition.
     Args:
@@ -69,33 +134,42 @@ def get_gmp(input_shape: tuple[int] = (24, 3, 1),
         layers.Input(shape=input_shape)
     )
 
-    # Conv layers
-    # for _ in range(num_conv_layers):
+    if layer_1_conf.max_pooling_size:
+        raise ValueError("Max pooling for first layer not supported")
+
     model.add(layers.BatchNormalization())
-    model.add(layers.Conv2D(16, kernel_size=(5, 1),
+    model.add(layers.Conv2D(layer_1_conf.num_filters,
+                            kernel_size=(layer_1_conf.kernel_size, 1),
                             strides=(1, 1),
                             kernel_initializer='glorot_uniform',
                             padding="valid",
                             activation="relu"))
 
-    model.add(layers.MaxPooling2D(pool_size=(2, 1)))
+    model.add(layers.MaxPooling2D(pool_size=(layer_2_conf.max_pooling_size, 1)))
 
     model.add(layers.BatchNormalization())
-    model.add(layers.Conv2D(16, kernel_size=(5, 3),
+    model.add(layers.Conv2D(layer_2_conf.num_filters,
+                            kernel_size=(layer_2_conf.kernel_size, 3),
                             strides=(1, 1),
                             kernel_initializer='glorot_uniform',
                             padding="valid",
                             activation="relu"))
+
+    if layer_3_conf.optional_layer:
+        model.add(layers.MaxPooling2D(pool_size=(layer_3_conf.max_pooling_size, 1)))
+
+        model.add(layers.BatchNormalization())
+        model.add(layers.Conv2D(layer_3_conf.num_filters,
+                                kernel_size=(layer_3_conf.kernel_size, 3),
+                                strides=(1, 1),
+                                kernel_initializer='glorot_uniform',
+                                padding="valid",
+                                activation="relu"))
+
     # maxpooling
     model.add(
         layers.GlobalMaxPooling2D()
     )
-
-    # front
-    if dropout:
-        model.add(
-            layers.Dropout(dropout)
-        )
 
     model.add(
         layers.Dense(num_classes)

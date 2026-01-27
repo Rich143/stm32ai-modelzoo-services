@@ -11,11 +11,9 @@ operation_mode: keras_tuner
 
 keras_tuner:
   experiment_name: gmp_tuner
-  max_trials: 10
+  max_trials: 100
   executions_per_trial: 1
-  num_conv_layers_min: 2
-  num_conv_layers_max: 5
-  max_maccs: 500000
+  max_maccs: 50000
   max_num_params: 100000
 
 dataset:

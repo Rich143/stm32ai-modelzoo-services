@@ -232,12 +232,6 @@ def check_tuner_cfg(cfg):
     if tuner_cfg is None:
         raise ValueError("\nPlease check the 'keras_tuner' section of your configuration file.")
 
-    if tuner_cfg.num_conv_layers_min is None:
-        raise ValueError("\nPlease check the 'keras_tuner.num_conv_layers_min' section of your configuration file.")
-
-    if tuner_cfg.num_conv_layers_max is None:
-        raise ValueError("\nPlease check the 'keras_tuner.num_conv_layers_max' section of your configuration file.")
-
     if tuner_cfg.max_trials is None:
         raise ValueError("\nPlease check the 'keras_tuner.max_trials' section of your configuration file.")
 
@@ -304,9 +298,6 @@ def train_keras_tuner(cfg: DictConfig,
     hypermodel = gmp_create_build_model(
         input_shape=cfg.training.model.input_shape,
         num_classes=num_classes,
-        dropout=cfg.training.dropout,
-        num_conv_layers_min=cfg.keras_tuner.num_conv_layers_min,
-        num_conv_layers_max=cfg.keras_tuner.num_conv_layers_max,
         max_maccs=cfg.keras_tuner.max_maccs,
         max_num_params=cfg.keras_tuner.max_num_params,
     )
@@ -314,7 +305,7 @@ def train_keras_tuner(cfg: DictConfig,
     tuner = keras_tuner.RandomSearch(
         hypermodel=hypermodel,
         objective=keras_tuner.Objective(
-            "val_auc_pr",
+            "val_accuracy",
             direction="max"
         ),
         max_trials=cfg.keras_tuner.max_trials,
