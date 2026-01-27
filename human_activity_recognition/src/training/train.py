@@ -305,7 +305,7 @@ def train_keras_tuner(cfg: DictConfig,
     tuner = keras_tuner.RandomSearch(
         hypermodel=hypermodel,
         objective=keras_tuner.Objective(
-            "val_accuracy",
+            "val_f1_macro",
             direction="max"
         ),
         max_trials=cfg.keras_tuner.max_trials,

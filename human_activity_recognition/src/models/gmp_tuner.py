@@ -110,6 +110,12 @@ def get_pr_auc_metric():
             name="auc_pr"
         )
 
+def get_f1_macro_metric():
+    return tf.keras.metrics.F1Score(
+            average="macro",
+            name="f1_macro"
+        )
+
 def get_gmp(input_shape: tuple[int] = (24, 3, 1),
             num_classes: int = 4,
             layer_1_conf: ConvLayerConfig = ConvLayerConfig(),
@@ -127,6 +133,8 @@ def get_gmp(input_shape: tuple[int] = (24, 3, 1),
         - keras.Model object, the gmp model.
     """
 
+    current_size = input_shape[0]
+
     model = tf.keras.Sequential()
 
     # Input block
@@ -137,6 +145,7 @@ def get_gmp(input_shape: tuple[int] = (24, 3, 1),
     if layer_1_conf.max_pooling_size:
         raise ValueError("Max pooling for first layer not supported")
 
+    # First Conv + BatchNorm block
     model.add(layers.BatchNormalization())
     model.add(layers.Conv2D(layer_1_conf.num_filters,
                             kernel_size=(layer_1_conf.kernel_size, 1),
@@ -145,7 +154,25 @@ def get_gmp(input_shape: tuple[int] = (24, 3, 1),
                             padding="valid",
                             activation="relu"))
 
+    # Update Size after Conv layer
+    current_size -= (layer_1_conf.kernel_size - 1)
+
+    # Check Size
+    if layer_2_conf.max_pooling_size > current_size:
+        raise kt.errors.FailedTrialError(
+            f"Model invalid, layer_2_conf.max_pooling_size > current_size (layer 2): {layer_2_conf.max_pooling_size} > {current_size}"
+        )
+
     model.add(layers.MaxPooling2D(pool_size=(layer_2_conf.max_pooling_size, 1)))
+
+    # Update Size after Max Pool layer
+    current_size //= layer_2_conf.max_pooling_size
+
+    # Check Size
+    if current_size <= layer_2_conf.kernel_size:
+        raise kt.errors.FailedTrialError(
+            f"Model invalid, current_size <= layer_2_conf.kernel_size (layer 2): {current_size} >= {layer_2_conf.kernel_size}"
+        )
 
     model.add(layers.BatchNormalization())
     model.add(layers.Conv2D(layer_2_conf.num_filters,
@@ -156,7 +183,23 @@ def get_gmp(input_shape: tuple[int] = (24, 3, 1),
                             activation="relu"))
 
     if layer_3_conf.optional_layer:
+        current_size -= (layer_2_conf.kernel_size - 1)
+
+        # Check Size
+        if layer_3_conf.max_pooling_size > current_size:
+            raise kt.errors.FailedTrialError(
+                f"Model invalid, layer_3_conf.max_pooling_size > current_size (layer 3): {layer_3_conf.max_pooling_size} > {current_size}"
+            )
+
         model.add(layers.MaxPooling2D(pool_size=(layer_3_conf.max_pooling_size, 1)))
+
+        current_size //= layer_3_conf.max_pooling_size
+
+        # Check Size
+        if current_size <= layer_3_conf.kernel_size:
+            raise kt.errors.FailedTrialError(
+                f"Model invalid, current_size <= layer_3_conf.kernel_size (layer 3): {current_size} >= {layer_3_conf.kernel_size}"
+            )
 
         model.add(layers.BatchNormalization())
         model.add(layers.Conv2D(layer_3_conf.num_filters,
@@ -179,8 +222,8 @@ def get_gmp(input_shape: tuple[int] = (24, 3, 1),
         layers.Activation('softmax')
     )
 
-    pr_auc_metric = get_pr_auc_metric()
+    f1_metric = get_f1_macro_metric()
 
-    model.compile(optimizer='adam', loss='categorical_crossentropy', metrics=['accuracy', pr_auc_metric])
+    model.compile(optimizer='adam', loss='categorical_crossentropy', metrics=['accuracy', f1_metric])
 
     return model
