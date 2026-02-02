@@ -56,7 +56,7 @@ from logs_utils import log_to_file
 from experiments.experiment_utils import mlflow_init
 from experiments.input_len_sweep import input_len_experiment
 from experiments.gaussian_noise_sweep import gaussian_noise_experiment
-from experiments.keras_tuner_gmp import run_gmp_tuner
+from experiments.keras_tuner import run_keras_tuner
 
 def chain_tb(cfg: DictConfig = None, train_ds: tf.data.Dataset = None,
              valid_ds: tf.data.Dataset = None, test_ds: tf.data.Dataset = None) -> None:
@@ -96,8 +96,7 @@ def experiment_mode(configs: DictConfig) -> None:
         raise ValueError("Unknown sweep axis: {}".format(configs.experiment.tags.sweep_axis))
 
 def keras_tuner_mode(configs: DictConfig, ) -> None:
-    if configs.keras_tuner.experiment_name == 'gmp_tuner':
-        run_gmp_tuner(configs)
+    run_keras_tuner(configs)
 
 def process_mode(mode: str = None,
                  configs: DictConfig = None,

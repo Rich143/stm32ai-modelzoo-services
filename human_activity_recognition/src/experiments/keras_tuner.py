@@ -56,7 +56,7 @@ def get_class_weights(labels: np.ndarray, class_names: List[str]) -> Dict[int, f
 
     return class_weights
 
-def run_gmp_tuner(configs: DictConfig) -> None:
+def run_keras_tuner(configs: DictConfig) -> None:
     dataset = load_and_preprocess_dataset(cfg=configs)
 
     train_subjects, cv_subjects, test_subjects, excluded_subjects = (

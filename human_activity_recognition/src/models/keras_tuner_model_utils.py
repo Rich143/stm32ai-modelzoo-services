@@ -34,6 +34,12 @@ def get_layer_maccs(layer, input_shape=None):
         oh, ow = layer.output.shape[1:3]
         # depthwise: one filter per input channel
         return kh * kw * in_channels * oh * ow
+    elif isinstance(layer, tf.keras.layers.SeparableConv2D):
+        in_channels = layer.input.shape[-1]
+        out_channels = layer.filters
+        kh, kw = layer.kernel_size
+        oh, ow = layer.output.shape[1:3]
+        return oh * ow * in_channels * (kh * kw + out_channels)
     else:
         # for pooling, activation, batchnorm, etc., MACCs are negligible
         return 0

@@ -34,6 +34,7 @@ import lr_schedulers
 from evaluate import evaluate_keras_model
 from visualize_utils import vis_training_curves
 from gmp_tuner import create_build_model as gmp_create_build_model
+from ddcnn_tuner import create_build_model as ddcnn_create_build_model 
 from data_load_helpers import global_activity_name_to_id
 
 from math import ceil
@@ -295,14 +296,14 @@ def train_keras_tuner(cfg: DictConfig,
         print("[INFO] Adding tensorboard callback")
         callbacks.append(tb_cb)
 
-    hypermodel = gmp_create_build_model(
+    hypermodel = ddcnn_create_build_model(
         input_shape=cfg.training.model.input_shape,
         num_classes=num_classes,
         max_maccs=cfg.keras_tuner.max_maccs,
         max_num_params=cfg.keras_tuner.max_num_params,
     )
 
-    tuner = keras_tuner.RandomSearch(
+    tuner = keras_tuner.BayesianOptimization(
         hypermodel=hypermodel,
         objective=keras_tuner.Objective(
             "val_f1_macro",
@@ -311,9 +312,9 @@ def train_keras_tuner(cfg: DictConfig,
         max_trials=cfg.keras_tuner.max_trials,
         executions_per_trial=cfg.keras_tuner.executions_per_trial,
         directory=os.path.join(output_dir, "keras_tuner"),
-        max_retries_per_trial=3,
+        max_retries_per_trial=2,
         max_consecutive_failed_trials=20,
-        project_name="HAR_GMP_TUNER",
+        project_name="HAR_DDCNN_TUNER",
         seed=get_random_seed(cfg),
     )
 
