@@ -33,8 +33,9 @@ from models_mgt import get_model, get_loss
 import lr_schedulers
 from evaluate import evaluate_keras_model
 from visualize_utils import vis_training_curves
-from gmp_tuner import create_build_model as gmp_create_build_model
-from ddcnn_tuner import create_build_model as ddcnn_create_build_model 
+# from gmp_tuner import create_build_model as gmp_create_build_model
+# from ddcnn_tuner import create_build_model as ddcnn_create_build_model 
+from ddcnn_2_tuner import create_build_model as ddcnn_2_create_build_model 
 from data_load_helpers import global_activity_name_to_id
 
 from math import ceil
@@ -296,7 +297,7 @@ def train_keras_tuner(cfg: DictConfig,
         print("[INFO] Adding tensorboard callback")
         callbacks.append(tb_cb)
 
-    hypermodel = ddcnn_create_build_model(
+    hypermodel = ddcnn_2_create_build_model(
         input_shape=cfg.training.model.input_shape,
         num_classes=num_classes,
         max_maccs=cfg.keras_tuner.max_maccs,
@@ -314,8 +315,10 @@ def train_keras_tuner(cfg: DictConfig,
         directory=os.path.join(output_dir, "keras_tuner"),
         max_retries_per_trial=2,
         max_consecutive_failed_trials=20,
-        project_name="HAR_DDCNN_TUNER",
+        project_name="HAR_DDCNN_2_TUNER",
         seed=get_random_seed(cfg),
+        alpha=1e-3,
+        beta=5,
     )
 
     tuner.search_space_summary()
