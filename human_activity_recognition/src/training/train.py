@@ -18,10 +18,11 @@ from hydra.core.hydra_config import HydraConfig
 from munch import DefaultMunch
 from omegaconf import DictConfig
 import numpy as np
+from sklearn.utils import class_weight
 import tensorflow as tf
 from tensorflow.keras.callbacks import EarlyStopping
 import mlflow
-import keras_tuner
+import optuna
 
 from logs_utils import log_to_file, log_last_epoch_history, LRTensorBoard
 from gpu_utils import check_training_determinism
@@ -36,7 +37,9 @@ from visualize_utils import vis_training_curves
 # from gmp_tuner import create_build_model as gmp_create_build_model
 # from ddcnn_tuner import create_build_model as ddcnn_create_build_model 
 # from ddcnn_2_tuner import create_build_model as ddcnn_2_create_build_model 
-from ddcnn_3_tuner import create_build_model as ddcnn_3_create_build_model 
+from ddcnn_tuner_optuna import get_ddcnn_model
+from keras_tuner_model_utils import get_model_maccs, get_model_num_params
+from experiments.tuner_utils import plot_3d_pareto_plotly
 from data_load_helpers import global_activity_name_to_id
 
 from math import ceil
@@ -231,15 +234,15 @@ def get_tensorboard_profile_cb():
     return tb_cb
 
 def check_tuner_cfg(cfg):
-    tuner_cfg = cfg.keras_tuner
+    tuner_cfg = cfg.tuner
     if tuner_cfg is None:
-        raise ValueError("\nPlease check the 'keras_tuner' section of your configuration file.")
+        raise ValueError("\nNo Tuner CFG found. Please check the 'tuner' section of your configuration file.")
 
     if tuner_cfg.max_trials is None:
-        raise ValueError("\nPlease check the 'keras_tuner.max_trials' section of your configuration file.")
+        raise ValueError("\nNo max_trials found. Please check the 'tuner.max_trials' section of your configuration file.")
 
     if tuner_cfg.executions_per_trial is None:
-        raise ValueError("\nPlease check the 'keras_tuner.executions_per_trial' section of your configuration file.")
+        raise ValueError("\nNo executions_per_trial found. Please check the 'tuner.executions_per_trial' section of your configuration file.")
 
 def get_early_stopping_cb(cfg: DictConfig):
     if cfg.training.EarlyStopping is not None:
@@ -256,6 +259,113 @@ def get_keras_tuner_tensorboard_cb(logDir: str):
     )
 
     return tb_cb
+
+def get_tuner_objective(train_ds: tf.data.Dataset,
+                        valid_ds: tf.data.Dataset,
+                        callbacks: Optional[List[tf.keras.callbacks.Callback]],
+                        class_weights: Dict[int, float],
+                        epochs: int,
+                        num_classes: int,
+                        input_shape: Tuple[int, int, int],
+                        steps_per_epoch: int,
+                        ):
+    def objective(trial):
+        model = get_ddcnn_model(
+            trial,
+            input_shape=input_shape,
+            num_classes=num_classes,
+        )
+
+        model.summary()
+
+        monitor = "val_f1_macro"
+
+        maccs = get_model_maccs(model)
+        params = get_model_num_params(model)
+        print("[INFO] MACCs: {}".format(maccs))
+        print("[INFO] # Params: {}".format(params))
+
+        # Train model.
+        history = model.fit(train_ds,
+                            validation_data=valid_ds,
+                            epochs=epochs,
+                            steps_per_epoch=steps_per_epoch,
+                            callbacks=callbacks,
+                            class_weight=class_weights,
+                            verbose=1)
+
+        return history.history[monitor][-1], params, maccs
+
+    return objective
+
+def train_tuner(cfg: DictConfig,
+                      train_ds: tf.data.Dataset,
+                      valid_ds: tf.data.Dataset,
+                      class_weights: Dict[int, float],
+                      test_ds: Optional[tf.data.Dataset] = None,
+                      callbacks: Optional[List[tf.keras.callbacks.Callback]] = None,
+                      run_name: str = "tuner_base") -> str:
+    """
+    Runs Keras Tuner using the provided configuration and datasets.
+
+    Args:
+        cfg (DictConfig): The entire configuration file dictionary.
+        train_ds (tf.data.Dataset): training dataset loader.
+        valid_ds (tf.data.Dataset): validation dataset loader.
+        test_ds (Optional, tf.data.Dataset): test dataset dataset loader.
+        callbacks (Optional, List[tf.keras.callbacks.Callback]): list of callbacks.
+        run_name (str): name of the run
+
+    Returns:
+        Path to the best model obtained
+    """
+    check_tuner_cfg(cfg)
+
+    output_dir = HydraConfig.get().runtime.output_dir
+
+    class_names = cfg.dataset.class_names
+    num_classes = len(class_names)
+
+    early_stop_cb = get_early_stopping_cb(cfg)
+
+    if callbacks is None:
+        callbacks = []
+
+    if early_stop_cb is not None:
+        print("[INFO] Adding early stopping callback")
+        callbacks.append(early_stop_cb)
+
+    sampler = optuna.samplers.NSGAIISampler(
+        population_size=64,      # typical 16–64
+        mutation_prob=0.1,
+        crossover_prob=0.9,
+        seed=get_random_seed(cfg)
+    )
+
+    study = optuna.create_study(
+        directions=["maximize", "minimize", "minimize"],
+        sampler=sampler
+    )
+
+    objective = get_tuner_objective(
+        train_ds=train_ds,
+        valid_ds=valid_ds,
+        callbacks=callbacks,
+        class_weights=class_weights,
+        epochs=cfg.training.epochs,
+        num_classes=num_classes,
+        input_shape=cfg.training.model.input_shape,
+        steps_per_epoch=cfg.dataset.steps_per_epoch,
+    )
+
+    study.optimize(objective, n_trials=cfg.tuner.max_trials)
+
+    plot_3d_pareto_plotly(
+        study,
+        log_scale_params=True,
+        log_scale_maccs=True
+    )
+
 
 def train_keras_tuner(cfg: DictConfig,
                       train_ds: tf.data.Dataset,

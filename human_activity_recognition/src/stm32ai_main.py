@@ -56,7 +56,7 @@ from logs_utils import log_to_file
 from experiments.experiment_utils import mlflow_init
 from experiments.input_len_sweep import input_len_experiment
 from experiments.gaussian_noise_sweep import gaussian_noise_experiment
-from experiments.keras_tuner import run_keras_tuner
+from experiments.tuner import run_tuner
 
 def chain_tb(cfg: DictConfig = None, train_ds: tf.data.Dataset = None,
              valid_ds: tf.data.Dataset = None, test_ds: tf.data.Dataset = None) -> None:
@@ -95,8 +95,8 @@ def experiment_mode(configs: DictConfig) -> None:
     else:
         raise ValueError("Unknown sweep axis: {}".format(configs.experiment.tags.sweep_axis))
 
-def keras_tuner_mode(configs: DictConfig, ) -> None:
-    run_keras_tuner(configs)
+def tuner_mode(configs: DictConfig, ) -> None:
+    run_tuner(configs)
 
 def process_mode(mode: str = None,
                  configs: DictConfig = None,
@@ -202,8 +202,8 @@ def main(cfg: DictConfig) -> None:
 
     # Extract the mode from the command-line arguments
     mode = cfg.operation_mode
-    valid_modes = ['experiment',  'keras_tuner']
-    # valid_modes = ['training',  'experiment',  'keras_tuner', 'evaluation', 'chain_tb']
+    valid_modes = ['experiment',  'tuner']
+    # valid_modes = ['training',  'experiment',  'tuner', 'evaluation', 'chain_tb']
     if mode in valid_modes:
         if mode == 'experiment':
             print("[INFO] Starting experiment mode")
@@ -215,12 +215,12 @@ def main(cfg: DictConfig) -> None:
             log_to_file(cfg.output_dir, f'operation_mode: {mode}')
             experiment_mode(configs=cfg)
             print('[INFO] : Experiment complete.')
-        elif mode == 'keras_tuner':
-            print("[INFO] Starting keras tuner mode")
+        elif mode == 'tuner':
+            print("[INFO] Starting hyperparameter tuner mode")
             # logging the operation_mode in the output_dir/stm32ai_main.log file
             log_to_file(cfg.output_dir, f'operation_mode: {mode}')
-            keras_tuner_mode(configs=cfg)
-            print('[INFO] : Keras tuner complete.')
+            tuner_mode(configs=cfg)
+            print('[INFO] : Hyperparameter tuner complete.')
         else:
             raise NotImplementedError
             # # Perform further processing based on the selected mode

@@ -8,7 +8,7 @@ from omegaconf import DictConfig
 from preprocess import (load_and_preprocess_dataset,
                         segment_presplit_dataset_using_config,
                         one_hot_encoding_from_activity_ids)
-from train import train_keras_tuner
+from train import train_tuner
 from experiments.experiment_utils import (kfold_train_val_test,
                                           get_cv_subjects)
 from sklearn.utils.class_weight import compute_class_weight
@@ -56,7 +56,7 @@ def get_class_weights(labels: np.ndarray, class_names: List[str]) -> Dict[int, f
 
     return class_weights
 
-def run_keras_tuner(configs: DictConfig) -> None:
+def run_tuner(configs: DictConfig) -> None:
     dataset = load_and_preprocess_dataset(cfg=configs)
 
     train_subjects, cv_subjects, test_subjects, excluded_subjects = (
@@ -81,14 +81,14 @@ def run_keras_tuner(configs: DictConfig) -> None:
 
     class_weights = get_class_weights(labels=labels, class_names=configs.dataset.class_names)
 
-    # We just use one split (don't do kfold for keras tuner)
+    # We just use one split (don't do kfold for tuner)
     train_ds, valid_ds, test_ds, callbacks = (
         segment_presplit_dataset_using_config(train_ds=datasets[0][0],
                                               val_ds=datasets[0][1],
                                               test_ds=datasets[0][2],
                                               cfg=configs))
 
-    train_keras_tuner(cfg=configs,
+    train_tuner(cfg=configs,
                       train_ds=train_ds,
                       valid_ds=valid_ds,
                       test_ds=test_ds,

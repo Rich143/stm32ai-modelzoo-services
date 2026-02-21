@@ -10,31 +10,11 @@
 
 import tensorflow as tf
 import tensorflow.keras.layers as layers
-from dataclasses import dataclass
-from typing import Optional, List
-from enum import StrEnum
-
-"""
-Optuna example that demonstrates a pruner for tf.keras.
-
-In this example, we optimize the validation accuracy of hand-written digit recognition
-using tf.keras and MNIST, where the architecture of the neural network
-and the parameters of optimizer are optimized.
-Throughout the training of neural networks,
-a pruner observes intermediate results and stops unpromising trials.
-
-You can run this example as follows:
-    $ python tfkeras_integration.py
-
-"""
 
 from dataclasses import dataclass
-from typing import Optional, List
 
 import optuna
 from optuna.trial import TrialState
-
-import tensorflow as tf
 
 @dataclass
 class ConvLayerConfig:
@@ -69,6 +49,10 @@ def get_max_dilation_rate(layer_input_shape: tuple[int, int, int],
 
     max_dilation_rate = (length - 1) // (kernel_size - 1)
 
+    if max_dilation_rate == 0:
+        # No dilation
+        max_dilation_rate = 1
+
     return min(max_dilation_rate, max_dilation_rate_configured)
 
 def get_conv_layer_params(layer_input_shape: tuple[int, int, int],
@@ -87,9 +71,11 @@ def get_conv_layer_params(layer_input_shape: tuple[int, int, int],
         conv_layer_config.kernel_size_max
     )
 
+    min_kernel_size = min(conv_layer_config.kernel_size_min, max_kernel_size)
+
     kernel_size = trial.suggest_int(
         f"layer_{layer_num}_kernel_size",
-        conv_layer_config.kernel_size_min,
+        min_kernel_size,
         max_kernel_size,
         step=2
     )
@@ -115,6 +101,10 @@ def get_max_pooling_size_max(layer_input_shape: tuple[int, int, int],
 
     # Ensure output at least length 5 (so that a conv filter of size 3 can be applied in a useful manner)
     max_val = length // 5
+
+    if max_val == 0:
+        # Length < 5 will give output 0, so set to 1 meaning no max pool allowed
+        max_val = 1
 
     return min(max_val, max_pooling_size_max_configured)
 
@@ -320,7 +310,6 @@ def get_ddcnn_model(trial: optuna.Trial,
                 f"layer_{i}_conv_type",
                 ["standard", "separable"])
 
-        # TODO: Use separable convs
         add_conv_layer(
             model,
             trial,
@@ -355,62 +344,62 @@ def get_ddcnn_model(trial: optuna.Trial,
 
     return model
 
-def objective(trial):
-    # Clear clutter from previous TensorFlow graphs.
-    tf.keras.backend.clear_session()
+# def objective(trial):
+    # # Clear clutter from previous TensorFlow graphs.
+    # tf.keras.backend.clear_session()
 
-    monitor = "val_f1_macro"
+    # monitor = "val_f1_macro"
 
-    # Create tf.keras model instance.
-    model = get_d(trial)
+    # # Create tf.keras model instance.
+    # model = get_d(trial)
 
-    # Create dataset instance.
-    ds_train = train_dataset()
-    ds_eval = eval_dataset()
+    # # Create dataset instance.
+    # ds_train = train_dataset()
+    # ds_eval = eval_dataset()
 
-    # Create callbacks for early stopping and pruning.
-    callbacks = [
-        tf.keras.callbacks.EarlyStopping(patience=3),
-    ]
+    # # Create callbacks for early stopping and pruning.
+    # callbacks = [
+        # tf.keras.callbacks.EarlyStopping(patience=3),
+    # ]
 
-    # Train model.
-    history = model.fit(
-        ds_train,
-        epochs=EPOCHS,
-        steps_per_epoch=STEPS_PER_EPOCH,
-        validation_data=ds_eval,
-        validation_steps=VALIDATION_STEPS,
-        callbacks=callbacks,
-    )
+    # # Train model.
+    # history = model.fit(
+        # ds_train,
+        # epochs=EPOCHS,
+        # steps_per_epoch=STEPS_PER_EPOCH,
+        # validation_data=ds_eval,
+        # validation_steps=VALIDATION_STEPS,
+        # callbacks=callbacks,
+    # )
 
-    return history.history[monitor][-1]
-
-
-def show_result(study):
-    pruned_trials = study.get_trials(deepcopy=False, states=[TrialState.PRUNED])
-    complete_trials = study.get_trials(deepcopy=False, states=[TrialState.COMPLETE])
-
-    print("Study statistics: ")
-    print("  Number of finished trials: ", len(study.trials))
-    print("  Number of pruned trials: ", len(pruned_trials))
-    print("  Number of complete trials: ", len(complete_trials))
-
-    print("Best trial:")
-    trial = study.best_trial
-
-    print("  Value: ", trial.value)
-
-    print("  Params: ")
-    for key, value in trial.params.items():
-        print("    {}: {}".format(key, value))
+    # return history.history[monitor][-1]
 
 
-def main():
-    study = optuna.create_study(
-        direction="maximize", pruner=optuna.pruners.MedianPruner(n_startup_trials=2)
-    )
+# def show_result(study):
+    # pruned_trials = study.get_trials(deepcopy=False, states=[TrialState.PRUNED])
+    # complete_trials = study.get_trials(deepcopy=False, states=[TrialState.COMPLETE])
 
-    study.optimize(objective, n_trials=25, timeout=600)
+    # print("Study statistics: ")
+    # print("  Number of finished trials: ", len(study.trials))
+    # print("  Number of pruned trials: ", len(pruned_trials))
+    # print("  Number of complete trials: ", len(complete_trials))
+
+    # print("Best trial:")
+    # trial = study.best_trial
+
+    # print("  Value: ", trial.value)
+
+    # print("  Params: ")
+    # for key, value in trial.params.items():
+        # print("    {}: {}".format(key, value))
+
+
+# def main():
+    # study = optuna.create_study(
+        # direction="maximize", pruner=optuna.pruners.MedianPruner(n_startup_trials=2)
+    # )
+
+    # study.optimize(objective, n_trials=25, timeout=600)
 
     show_result(study)
 
