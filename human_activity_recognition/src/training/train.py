@@ -11,7 +11,8 @@ import os
 import sys
 from pathlib import Path
 from timeit import default_timer as timer
-from datetime import timedelta
+from datetime import timedelta, datetime
+import uuid
 from typing import Tuple, List, Dict, Optional
 
 from hydra.core.hydra_config import HydraConfig
@@ -328,13 +329,14 @@ def get_tuner_objective(train_ds: tf.data.Dataset,
 
     return objective
 
-def train_tuner(cfg: DictConfig,
-                      train_ds: tf.data.Dataset,
-                      valid_ds: tf.data.Dataset,
-                      class_weights: Dict[int, float],
-                      test_ds: Optional[tf.data.Dataset] = None,
-                      callbacks: Optional[List[tf.keras.callbacks.Callback]] = None,
-                      run_name: str = "tuner_base") -> str:
+def train_tuner(
+    cfg: DictConfig,
+    train_ds: tf.data.Dataset,
+    valid_ds: tf.data.Dataset,
+    class_weights: Dict[int, float],
+    test_ds: Optional[tf.data.Dataset] = None,
+    callbacks: Optional[List[tf.keras.callbacks.Callback]] = None,
+) -> str:
     """
     Runs Keras Tuner using the provided configuration and datasets.
 
@@ -363,9 +365,15 @@ def train_tuner(cfg: DictConfig,
         seed=get_random_seed(cfg)
     )
 
+    study_name = f"{cfg.tuner.experiment_name}"
+    storage_name = f"sqlite:///{output_dir}/{study_name}.db"
+
     study = optuna.create_study(
         directions=["maximize", "minimize", "minimize"],
-        sampler=sampler
+        sampler=sampler,
+        study_name=study_name,
+        storage=storage_name,
+        load_if_exists=True,
     )
 
     objective = get_tuner_objective(
@@ -377,7 +385,11 @@ def train_tuner(cfg: DictConfig,
         cfg=cfg
     )
 
-    study.optimize(objective, n_trials=cfg.tuner.max_trials)
+    try:
+        study.optimize(objective, n_trials=cfg.tuner.max_trials)
+    except KeyboardInterrupt:
+        print("Study interrupted by user. You can safely resume later.")
+        print(f"Study is saved to {storage_name}")
 
     plot_3d_pareto_plotly(
         study,

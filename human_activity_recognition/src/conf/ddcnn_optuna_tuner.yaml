@@ -102,4 +102,4 @@ mlflow:
 
 hydra:
   run:
-    dir: ./experiments_outputs/${now:%Y_%m_%d_%H_%M_%S}
+    dir: ./experiments_outputs/Optuna_Studies/${tuner.experiment_name}

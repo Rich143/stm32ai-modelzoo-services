@@ -24,8 +24,16 @@ def plot_3d_pareto_plotly(
     if len(all_trials) == 0:
         print("No completed trials found.")
         return
+    else:
+        print(f"Found {len(all_trials)} completed trials.")
 
     pareto_trials = study.best_trials
+
+    if len(pareto_trials) == 0:
+        print("No pareto front found.")
+        return
+    else:
+        print(f"Found {len(pareto_trials)} pareto front trials.")
 
     # Convert to numpy arrays
     all_vals = np.array([t.values for t in all_trials])
@@ -106,7 +114,7 @@ def plot_3d_pareto_plotly(
                 mode="markers",
                 marker=dict(
                     size=12,
-                    symbol="star",
+                    symbol="cross",
                 ),
                 name="Best F1",
             )
