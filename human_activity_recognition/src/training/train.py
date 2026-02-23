@@ -262,14 +262,32 @@ def get_keras_tuner_tensorboard_cb(logDir: str):
 
 def get_tuner_objective(train_ds: tf.data.Dataset,
                         valid_ds: tf.data.Dataset,
-                        callbacks: Optional[List[tf.keras.callbacks.Callback]],
+                        reusable_callbacks: Optional[List[tf.keras.callbacks.Callback]],
                         class_weights: Dict[int, float],
-                        epochs: int,
                         num_classes: int,
-                        input_shape: Tuple[int, int, int],
-                        steps_per_epoch: int,
+                        cfg,
                         ):
     def objective(trial):
+        # Clear clutter from previous TensorFlow graphs.
+        tf.keras.backend.clear_session()
+
+        callbacks = []
+
+        # Create a new early stopping CB for each model, maybe this fixes bug
+        # with early stopping
+        early_stop_cb = get_early_stopping_cb(cfg)
+
+        if early_stop_cb is not None:
+            print("[INFO] Adding early stopping callback")
+            callbacks.append(early_stop_cb)
+
+        if reusable_callbacks is not None:
+            callbacks.extend(reusable_callbacks)
+
+        epochs = cfg.training.epochs
+        steps_per_epoch = cfg.training.steps_per_epoch
+        input_shape = cfg.training.model.input_shape
+
         model = get_ddcnn_model(
             trial,
             input_shape=input_shape,
@@ -294,7 +312,19 @@ def get_tuner_objective(train_ds: tf.data.Dataset,
                             class_weight=class_weights,
                             verbose=1)
 
-        return history.history[monitor][-1], params, maccs
+        if early_stop_cb is not None:
+            print("Early stopping metrics:")
+            # Epoch with best monitored metric
+            best_epoch = early_stop_cb.best_epoch  # 0-indexed
+            print("Best epoch:", best_epoch)
+            print("Stopped epoch:", early_stop_cb.stopped_epoch)
+            print("Best value:", early_stop_cb.best)
+            print("Wait counter:", early_stop_cb.wait)
+
+
+        f1_val_best = max(history.history[monitor])
+
+        return f1_val_best, params, maccs
 
     return objective
 
@@ -326,15 +356,6 @@ def train_tuner(cfg: DictConfig,
     class_names = cfg.dataset.class_names
     num_classes = len(class_names)
 
-    early_stop_cb = get_early_stopping_cb(cfg)
-
-    if callbacks is None:
-        callbacks = []
-
-    if early_stop_cb is not None:
-        print("[INFO] Adding early stopping callback")
-        callbacks.append(early_stop_cb)
-
     sampler = optuna.samplers.NSGAIISampler(
         population_size=64,      # typical 16–64
         mutation_prob=0.1,
@@ -350,12 +371,10 @@ def train_tuner(cfg: DictConfig,
     objective = get_tuner_objective(
         train_ds=train_ds,
         valid_ds=valid_ds,
-        callbacks=callbacks,
+        reusable_callbacks=callbacks,
         class_weights=class_weights,
-        epochs=cfg.training.epochs,
         num_classes=num_classes,
-        input_shape=cfg.training.model.input_shape,
-        steps_per_epoch=cfg.dataset.steps_per_epoch,
+        cfg=cfg
     )
 
     study.optimize(objective, n_trials=cfg.tuner.max_trials)

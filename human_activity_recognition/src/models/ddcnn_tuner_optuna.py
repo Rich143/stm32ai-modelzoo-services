@@ -45,6 +45,9 @@ def get_max_kernel_size(layer_input_shape: tuple[int, int, int],
 def get_max_dilation_rate(layer_input_shape: tuple[int, int, int],
                           kernel_size: int,
                           max_dilation_rate_configured: int):
+    if kernel_size == 1:
+        return 1
+
     length = layer_input_shape[0]
 
     max_dilation_rate = (length - 1) // (kernel_size - 1)
@@ -145,6 +148,10 @@ def add_conv_layer(model: tf.keras.Sequential,
 
             layer_input_shape = model.output_shape[1:]
 
+    # BatchNorm
+
+    model.add(layers.BatchNormalization())
+
 
     # Conv Layer
 
@@ -205,7 +212,7 @@ def get_layer_confs():
     )
     max_pooling_2_conf = MaxPoolLayerConfig(
         max_pooling_enabled=True,
-        max_pooling_size_min=1, max_pooling_size_max=4
+        max_pooling_size_min=1, max_pooling_size_max=6
     )
 
     conv_3_conf = ConvLayerConfig(
@@ -217,7 +224,7 @@ def get_layer_confs():
     )
     max_pooling_3_conf = MaxPoolLayerConfig(
         max_pooling_enabled=True,
-        max_pooling_size_min=1, max_pooling_size_max=4
+        max_pooling_size_min=1, max_pooling_size_max=6
     )
 
     conv_4_conf = ConvLayerConfig(
@@ -229,7 +236,7 @@ def get_layer_confs():
     )
     max_pooling_4_conf = MaxPoolLayerConfig(
         max_pooling_enabled=True,
-        max_pooling_size_min=1, max_pooling_size_max=4
+        max_pooling_size_min=1, max_pooling_size_max=6
     )
 
     conv_5_conf = ConvLayerConfig(
@@ -289,7 +296,13 @@ def get_ddcnn_model(trial: optuna.Trial,
 
     pooling_type = trial.suggest_categorical(
         "pooling_type",
-        ["max", "avg"]
+        ["max", "avg", "flatten"]
+    )
+
+    num_dense_layers = trial.suggest_int(
+        "num_hidden_dense_layers",
+        0,
+        1
     )
 
     for i in range(num_conv_layers):
@@ -326,9 +339,23 @@ def get_ddcnn_model(trial: optuna.Trial,
         model.add(layers.GlobalMaxPooling2D())
     elif pooling_type == "avg":
         model.add(layers.GlobalAveragePooling2D())
+    elif pooling_type == "flatten":
+        model.add(layers.Flatten())
     else:
         raise ValueError(f"Invalid pooling type: {pooling_type}")
 
+    for i in range(num_dense_layers):
+        model.add(
+            layers.Dense(
+                units=trial.suggest_int(
+                    f"layer_{i}_dense_units",
+                    8,
+                    16,
+                    step=2
+                ),
+                activation='relu'
+            )
+        )
 
     model.add(
         layers.Dense(num_classes)
