@@ -13,6 +13,11 @@ tuner:
   experiment_name: ddcnn_optuna_tuner
   max_trials: 1000
   executions_per_trial: 1
+  sampler:
+    # NSGAII
+    population_size: 64
+    mutation_prob: 0.2
+    crossover_prob: 0.85
 
 #dataset:
   #names: [pamap2]
