@@ -359,9 +359,9 @@ def train_tuner(
     num_classes = len(class_names)
 
     sampler = optuna.samplers.NSGAIISampler(
-        population_size=64,      # typical 16–64
-        mutation_prob=0.1,
-        crossover_prob=0.9,
+        population_size=64,
+        mutation_prob=0.2,
+        crossover_prob=0.85,
         seed=get_random_seed(cfg)
     )
 
