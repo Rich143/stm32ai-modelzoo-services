@@ -38,7 +38,8 @@ from visualize_utils import vis_training_curves
 # from gmp_tuner import create_build_model as gmp_create_build_model
 # from ddcnn_tuner import create_build_model as ddcnn_create_build_model 
 # from ddcnn_2_tuner import create_build_model as ddcnn_2_create_build_model 
-from ddcnn_tuner_optuna import get_ddcnn_model
+# from ddcnn_tuner_optuna import get_ddcnn_model
+from ddcnn_tuner_optuna_2 import get_ddcnn_model
 from keras_tuner_model_utils import get_model_maccs, get_model_num_params
 from experiments.tuner_utils import plot_3d_pareto_plotly
 from data_load_helpers import global_activity_name_to_id
