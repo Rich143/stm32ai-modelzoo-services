@@ -60,7 +60,7 @@ training:
     name: gmp # available choices are [ign, gmp]
     input_shape: (48, 3, 1)
   dropout: 0.0
-  batch_size: 4096
+  batch_size: 2048
   epochs: 60
   steps_per_epoch: 150
   steps_per_execution: 20
