@@ -10,7 +10,7 @@ general:
 operation_mode: tuner
 
 tuner:
-  experiment_name: ddcnn_optuna_tuner_2
+  experiment_name: ddcnn_optuna_tuner_2_test
   max_trials: 2000
   executions_per_trial: 1
   sampler:
@@ -19,39 +19,48 @@ tuner:
     mutation_prob: 0.2
     crossover_prob: 0.85
 
-#dataset:
-  #names: [pamap2]
-  #paths: [../datasets/PAMAP2_Dataset]
-  #class_names: [stationary, walking, running, cycling] # PAMAP2
-  #train_val_test_cv_split:
-    #test_subjects: [PAMAP2_108]
-
-    ### Subjects to always be used for training, used to increase train set size compared to validation
-    ##train_subjects: [HARTH_26, HARTH_27, HARTH_28, HARTH_29, HARTH_30,
-    ##HARTH_31, HARTH_32, HARTH_33, HARTH_34]
-    #train_subjects: []
-
-    #excluded_subjects: [] # Excluded subjects
-  #seed: 123               # Optional, there is a default seed
-
 dataset:
-  names: [pamap2, harth]
-  paths: [../datasets/PAMAP2_Dataset, ../datasets/harth]
+  names: [pamap2]
+  paths: [../datasets/PAMAP2_Dataset]
   class_names: [stationary, walking, running, cycling] # PAMAP2
   train_val_test_cv_split:
-    test_subjects: [PAMAP2_108, HARTH_25]
+    test_subjects: [PAMAP2_108]
 
-    # Subjects to always be used for training, used to increase train set size compared to validation
-    train_subjects: [HARTH_26, HARTH_27, HARTH_28, HARTH_29, HARTH_30,
-    HARTH_31, HARTH_32, HARTH_33, HARTH_34]
+    ## Subjects to always be used for training, used to increase train set size compared to validation
+    #train_subjects: [HARTH_26, HARTH_27, HARTH_28, HARTH_29, HARTH_30,
+    #HARTH_31, HARTH_32, HARTH_33, HARTH_34]
+    train_subjects: []
 
     excluded_subjects: [] # Excluded subjects
   seed: 123               # Optional, there is a default seed
 
+#dataset:
+  #names: [pamap2, harth]
+  #paths: [../datasets/PAMAP2_Dataset, ../datasets/harth]
+  #class_names: [stationary, walking, running, cycling] # PAMAP2
+  #train_val_test_cv_split:
+    #test_subjects: [PAMAP2_108, HARTH_25]
+
+    ## Subjects to always be used for training, used to increase train set size compared to validation
+    #train_subjects: [HARTH_26, HARTH_27, HARTH_28, HARTH_29, HARTH_30,
+    #HARTH_31, HARTH_32, HARTH_33, HARTH_34]
+
+    #excluded_subjects: [] # Excluded subjects
+  #seed: 123               # Optional, there is a default seed
+
 preprocessing:
   gravity_rot_sup: True
-  gaussian_noise: True
-  gaussian_std: 0.125 # m/s^2
+
+  gaussian_noise:
+    gaussian_std: 0.125 # m/s^2
+  amplitude_scaling:
+    min_scaling: 0.8
+    max_scaling: 1.2
+  rotation:
+    max_roll_deg: 5
+    max_pitch_deg: 5
+    max_yaw_deg: 20
+
   sample_rate: 50 # Hz
   mean_group_delay: 123 # Samples
 

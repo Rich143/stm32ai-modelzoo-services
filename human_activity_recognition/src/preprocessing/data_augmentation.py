@@ -1,34 +1,69 @@
 import pandas as pd
 import tensorflow as tf
 import numpy as np
-from typing import Tuple
+from typing import Tuple, Optional
 
-# ---- Dummy NoiseConfig class ----
+from dataclasses import dataclass
+
+@dataclass
+class NoiseConfig:
+    noise_std: float
+
+@dataclass
+class AmplitudeScaleConfig:
+    min_scale: float
+    max_scale: float
+
+@dataclass
+class RotationConfig:
+    max_roll_deg: float
+    max_pitch_deg: float
+    max_yaw_deg: float
+
 class AugmentationConfig:
-    def __init__(self, noise_std: float, seed: int):
-        self.epoch = tf.Variable(0, dtype=tf.int64, trainable=False)
-
-        self.noise_std = noise_std
+    def __init__(self,
+                 seed: int,
+                 noise_cfg: Optional[NoiseConfig] = None,
+                 amplitude_scale_cfg: Optional[AmplitudeScaleConfig] = None,
+                 rotation_cfg: Optional[RotationConfig] = None,
+                ):
+        self.epoch = tf.Variable(0,
+                                 dtype=tf.int64,
+                                 trainable=False)
         self.seed = seed
 
-def get_stateless_noise_seed(cfg: AugmentationConfig, batch_idx, augmentation_seed) -> int:
+        self.noise_cfg = noise_cfg
+        self.amplitude_scale_cfg = amplitude_scale_cfg
+        self.rotation_cfg = rotation_cfg
+
+
+def get_stateless_augmentation_seed(cfg: AugmentationConfig, batch_idx) -> int:
     base_seed = tf.constant( [cfg.seed, 0], dtype=tf.int32)
 
     # seed = fold(global_seed, epoch)
     seed1 = tf.random.experimental.stateless_fold_in(base_seed, cfg.epoch)
 
-    # seed = fold(seed1, augmentation_seed)
-    seed2 = tf.random.experimental.stateless_fold_in(seed1, augmentation_seed)
-
-    # seed = fold(seed2, batch_idx)
-    final_seed = tf.random.experimental.stateless_fold_in(seed2, batch_idx)
+    # seed = fold(seed1, batch_idx)
+    final_seed = tf.random.experimental.stateless_fold_in(seed1, batch_idx)
 
     return final_seed
 
+def add_noise(batch: Tuple[tf.Tensor, tf.Tensor],
+              batch_seed: int,
+              noise_cfg: NoiseConfig):
+    x, y = batch
+
+    noise = tf.random.stateless_normal(
+        shape=tf.shape(x),
+        seed=batch_seed,
+        stddev=noise_cfg.noise_std,
+        dtype=x.dtype,
+    )
+    return x + noise, y
+
 def apply_amplitude_scaling(batch: Tuple[tf.Tensor, tf.Tensor],
                             batch_seed: int,
-                            min_scale: float = 0.8,
-                            max_scale: float = 1.2
+                            scale_cfg: AmplitudeScaleConfig
                            ) -> Tuple[tf.Tensor, tf.Tensor]:
 
     x, y = batch
@@ -38,8 +73,8 @@ def apply_amplitude_scaling(batch: Tuple[tf.Tensor, tf.Tensor],
     scales = tf.random.stateless_uniform(
         shape=(batch_size,),
         seed=batch_seed,
-        minval=min_scale,
-        maxval=max_scale,
+        minval=scale_cfg.min_scale,
+        maxval=scale_cfg.max_scale,
         dtype=x.dtype
     )
 
@@ -53,18 +88,16 @@ def apply_amplitude_scaling(batch: Tuple[tf.Tensor, tf.Tensor],
 
 def apply_full_rotation(batch: Tuple[tf.Tensor, tf.Tensor],
                         batch_seed: int,
-                        max_roll_deg=5.0,    # X-axis (small tilt)
-                        max_pitch_deg=5.0,   # Y-axis (small tilt)
-                        max_yaw_deg=45.0     # Z-axis (large heading change)
+                        rotation_cfg: RotationConfig
                        ) -> Tuple[tf.Tensor, tf.Tensor]:
 
     x, y = batch
     batch_size = tf.shape(x)[0]
 
     # Convert degrees → radians
-    max_roll  = max_roll_deg  * np.pi / 180.0
-    max_pitch = max_pitch_deg * np.pi / 180.0
-    max_yaw   = max_yaw_deg   * np.pi / 180.0
+    max_roll  = rotation_cfg.max_roll_deg  * np.pi / 180.0
+    max_pitch = rotation_cfg.max_pitch_deg * np.pi / 180.0
+    max_yaw   = rotation_cfg.max_yaw_deg   * np.pi / 180.0
 
     # ---- Sample each axis independently ----
     roll = tf.random.stateless_uniform(
@@ -122,49 +155,45 @@ def apply_full_rotation(batch: Tuple[tf.Tensor, tf.Tensor],
 
     return rotated, y
 
-# def generate_apply_yaw_rotation_fn(batch_seed: int, max_deg=15.0):
-    # def apply_yaw_rotation(batch_idx: int, batch: Tuple[tf.Tensor, tf.Tensor]) -> Tuple[tf.Tensor, tf.Tensor]:
-        # x, y = batch
+def generate_apply_augmentation(cfg: AugmentationConfig):
+    def apply_augmentation(batch_idx: int,
+                           batch: Tuple[tf.Tensor, tf.Tensor]
+                          ) -> Tuple[tf.Tensor, tf.Tensor]:
 
-        # batch_size = tf.shape(x)[0]
+        batch_seed = get_stateless_augmentation_seed(cfg, batch_idx)
+        x,y = batch
 
-        # max_rad = max_deg * np.pi / 180.0
+        if cfg.noise_cfg is not None:
+            noise_seed = tf.random.experimental.stateless_fold_in(
+                batch_seed, 1
+            )
 
-        # # generate one angle per sample (window)
-        # angles = tf.random.stateless_uniform(
-            # shape=(batch_size,),
-            # seed=batch_seed,
-            # minval=-max_rad,
-            # maxval=max_rad,
-            # dtype=x.dtype,
-        # )
+            x, y = add_noise((x, y),
+                             noise_seed,
+                             cfg.noise_cfg)
 
-        # cos_t = tf.cos(angles)
-        # sin_t = tf.sin(angles)
+        if cfg.amplitude_scale_cfg is not None:
+            amplitude_seed = tf.random.experimental.stateless_fold_in(
+                batch_seed, 2
+            )
 
-        # # Remove channel dimension
-        # x_squeezed = tf.squeeze(x, axis=-1)  # (B, 48, 3)
+            x, y = apply_amplitude_scaling((x, y),
+                                           amplitude_seed,
+                                           cfg.amplitude_scale_cfg)
 
-        # x_axis = x_squeezed[:, :, 0]  # (B, 48)
-        # y_axis = x_squeezed[:, :, 1]
-        # z_axis = x_squeezed[:, :, 2]
+        if cfg.rotation_cfg is not None:
+            rotation_seed = tf.random.experimental.stateless_fold_in(
+                batch_seed, 3
+            )
 
-        # # Expand cos/sin for broadcasting
-        # cos_t = tf.expand_dims(cos_t, axis=1)  # (B, 1)
-        # sin_t = tf.expand_dims(sin_t, axis=1)
+            x, y = apply_full_rotation((x, y),
+                                       rotation_seed,
+                                       cfg.rotation_cfg)
 
-        # # Apply yaw rotation
-        # x_rot = cos_t * x_axis - sin_t * y_axis
-        # y_rot = sin_t * x_axis + cos_t * y_axis
 
-        # rotated = tf.stack([x_rot, y_rot, z_axis], axis=2)  # (B, 48, 3)
+        return x, y
 
-        # # Add channel dimension back
-        # rotated = tf.expand_dims(rotated, axis=-1)  # (B, 48, 3, 1)
-
-        # return rotated, y
-
-    # return apply_yaw_rotation
+    return apply_augmentation
 
 if __name__ == "__main__":
 
@@ -250,9 +279,9 @@ if __name__ == "__main__":
         fig.update_layout(
             title=title,
             scene=dict(
-                xaxis=dict(range=[-2, 2]),
-                yaxis=dict(range=[-2, 2]),
-                zaxis=dict(range=[-2, 2]),
+                xaxis=dict(range=[-6, 6]),
+                yaxis=dict(range=[-6, 6]),
+                zaxis=dict(range=[-6, 6]),
                 aspectmode='cube'
             ),
             updatemenus=[dict(
@@ -286,7 +315,7 @@ if __name__ == "__main__":
 
     B = 4  # batch size
     window_len = 48
-    x_dummy = np.random.rand(B, window_len, 3, 1).astype(np.float32)
+    x_dummy = np.random.rand(B, window_len, 3, 1).astype(np.float32) * 4
     # const_vec = np.array([1.0, 0.0, 0.0], dtype=np.float32)  # (3,)
     # const_vec = const_vec.reshape(1, 1, 3, 1)                # (1,1,3,1)
 
@@ -298,14 +327,26 @@ if __name__ == "__main__":
     ds = ds.batch(B).enumerate()
 
     # ---- Apply yaw rotation and visualize ----
-    cfg = AugmentationConfig(seed=42, noise_std=0.0)
-    # yaw_fn = generate_apply_yaw_rotation_fn(batch_seed, max_deg=90.0)
+    noise_cfg = NoiseConfig(noise_std=0.125)
+    scaling_cfg = AmplitudeScaleConfig(min_scale=0.8, max_scale=1.2)
+    rotation_cfg = RotationConfig(max_roll_deg=5.0,
+                                  max_pitch_deg=5.0,
+                                  max_yaw_deg=15.0)
+
+    cfg = AugmentationConfig(seed=42,
+                             noise_cfg=noise_cfg,
+                             amplitude_scale_cfg=scaling_cfg,
+                             rotation_cfg=rotation_cfg)
+
+    aug_fn = generate_apply_augmentation(cfg)
 
     for batch_idx, batch in ds.take(1):
         x_batch, y_batch = batch
-        batch_seed = get_stateless_noise_seed(cfg,
-                                              batch_idx,
-                                              2)
+
+        x_aug, _ = aug_fn(batch_idx, batch)
+        # batch_seed = get_stateless_noise_seed(cfg,
+                                              # batch_idx,
+                                              # 3)
 
         # x_aug, _ = apply_full_rotation(batch,
                                        # batch_seed,
@@ -313,10 +354,16 @@ if __name__ == "__main__":
                                        # max_pitch_deg=5.0,
                                        # max_yaw_deg=15.0)
 
-        x_aug, _ = apply_amplitude_scaling(batch,
-                                              batch_seed,
-                                              min_scale=0.8,
-                                              max_scale=1.2)
+        # x_aug, _ = apply_amplitude_scaling(batch,
+                                              # batch_seed,
+                                              # min_scale=0.8,
+                                              # max_scale=1.2)
+
+        # x_aug, _ = add_noise(batch,
+                             # batch_seed,
+                             # noise_std=0.125)
+
         for sample_idx in range(B):
             animate_original_vs_rotated(x_batch[sample_idx], x_aug[sample_idx],
                                         title=f"Sample {sample_idx} Original vs Rotated")
+

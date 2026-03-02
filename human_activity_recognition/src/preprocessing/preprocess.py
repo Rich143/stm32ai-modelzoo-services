@@ -8,9 +8,13 @@
 #  *--------------------------------------------------------------------------------------------*/
 
 from omegaconf import DictConfig
-from typing import Tuple, TypeAlias, Any, List
+from typing import Tuple, TypeAlias, Any, List, Optional
+
 from data_loader import load_datasets, preprocess_dataset
 from data_load_helpers import global_activity_id_to_name
+from data_augmentation import (NoiseConfig, AmplitudeScaleConfig,
+                               RotationConfig, AugmentationConfig,
+                               generate_apply_augmentation)
 
 import pandas as pd
 import tensorflow as tf
@@ -51,6 +55,32 @@ def segment_presplit_dataset_using_config(train_ds: pd.DataFrame,
                                           cfg: DictConfig,
                                           to_cache: bool = False,
 ) -> Tuple[ds, ds, ds, CallbackList]:
+    preprocess_cfg = cfg.preprocessing
+
+    if cfg.preprocessing.gaussian_noise is not None:
+        noise_cfg = NoiseConfig(
+            preprocess_cfg.gaussian_noise.noise_std
+        )
+    else:
+        noise_cfg = None
+
+    if cfg.preprocessing.amplitude_scaling is not None:
+        scaling_cfg = AmplitudeScaleConfig(
+            preprocess_cfg.amplitude_scaling.min_scale,
+            preprocess_cfg.amplitude_scaling.max_scale
+        )
+    else:
+        scaling_cfg = None
+
+    if cfg.preprocessing.rotation is not None:
+        rotation_cfg = RotationConfig(
+            preprocess_cfg.rotation.max_roll_deg,
+            preprocess_cfg.rotation.max_pitch_deg,
+            preprocess_cfg.rotation.max_yaw_deg
+        )
+    else:
+        rotation_cfg = None
+
     return segment_presplit_dataset(
         train_ds=train_ds,
         val_ds=val_ds,
@@ -60,49 +90,45 @@ def segment_presplit_dataset_using_config(train_ds: pd.DataFrame,
         seed=cfg.dataset.seed,
         batch_size=cfg.training.batch_size,
         steps_per_epoch=cfg.training.steps_per_epoch,
-        gaussian_noise=cfg.preprocessing.gaussian_noise,
-        gaussian_std=cfg.preprocessing.gaussian_std,
+        noise_cfg=noise_cfg,
+        amplitude_scale_cfg=scaling_cfg,
+        rotation_cfg=rotation_cfg,
         to_cache=to_cache
     )
 
-class NoiseConfig:
-    def __init__(self, noise_std: float, seed: int):
-        # holds the current epoch number
-        self.epoch = tf.Variable(0, dtype=tf.int64, trainable=False)
-
-        self.noise_std = noise_std
-        self.seed = seed
+def segment_presplit_dataset_using_config_augmentation_tuning(
+    train_ds: pd.DataFrame,
+    val_ds: pd.DataFrame,
+    test_ds: pd.DataFrame,
+    cfg: DictConfig,
+    noise_cfg: NoiseConfig,
+    scaling_cfg: AmplitudeScaleConfig,
+    rotation_cfg: RotationConfig,
+    to_cache: bool = False,
+) -> Tuple[ds, ds, ds, CallbackList]:
+    return segment_presplit_dataset(
+        train_ds=train_ds,
+        val_ds=val_ds,
+        test_ds=test_ds,
+        class_names=cfg.dataset.class_names,
+        input_shape=cfg.training.model.input_shape,
+        seed=cfg.dataset.seed,
+        batch_size=cfg.training.batch_size,
+        steps_per_epoch=cfg.training.steps_per_epoch,
+        noise_cfg=noise_cfg,
+        amplitude_scale_cfg=scaling_cfg,
+        rotation_cfg=rotation_cfg,
+        to_cache=to_cache
+    )
 
 class UpdateEpoch(tf.keras.callbacks.Callback):
-    def __init__(self, cfg: NoiseConfig):
+    def __init__(self, cfg: data_augmentation.AugmentationConfig):
         super().__init__()
         self.cfg = cfg
 
     def on_epoch_begin(self, epoch, logs=None):
         # assign epoch to the tf.Variable
         self.cfg.epoch.assign(epoch)
-
-def make_stateless_noise_fn(cfg: NoiseConfig):
-    def add_noise(batch_idx, batch):
-        x, y = batch
-
-        base_seed = tf.constant([cfg.seed, 0], dtype=tf.int32)
-
-        # seed = fold(global_seed, epoch)
-        seed1 = tf.random.experimental.stateless_fold_in(base_seed, cfg.epoch)
-
-        # seed = fold(seed1, batch_idx)
-        final_seed = tf.random.experimental.stateless_fold_in(seed1, batch_idx)
-
-        noise = tf.random.stateless_normal(
-            shape=tf.shape(x),
-            seed=final_seed,
-            stddev=cfg.noise_std,
-            dtype=x.dtype,
-        )
-        return x + noise, y
-
-    return add_noise
 
 def get_segment_indices(data_column: List, win_len: int):
     '''
@@ -187,8 +213,9 @@ def build_train_ds(train_x: np.ndarray,
                    batch_size: int,
                    seed: int,
                    steps_per_epoch: int,
-                   gaussian_noise: bool = False,
-                   gaussian_std: float = 0,
+                   noise_cfg: Optional[NoiseConfig] = None,
+                   amplitude_scale_cfg: Optional[AmplitudeScaleConfig] = None,
+                   rotation_cfg: Optional[RotationConfig] = None,
                    to_cache: bool = False
                   ) -> Tuple[
                       tf.data.Dataset,
@@ -215,20 +242,26 @@ def build_train_ds(train_x: np.ndarray,
 
     callbacks = []
 
-    if gaussian_noise:
-        noise_cfg = NoiseConfig(gaussian_std, seed)
+    augmentation_cfg = AugmentationConfig(
+        noise_cfg=noise_cfg,
+        amplitude_scale_cfg=amplitude_scale_cfg,
+        rotation_cfg=rotation_cfg,
+        seed=seed
+    )
 
-        callbacks.append(UpdateEpoch(noise_cfg))
+    apply_augmentation = generate_apply_augmentation(augmentation_cfg)
 
-        # Adds in a batch idx to use with the stateless random number generator
-        train_ds = train_ds.enumerate()
-        train_ds = train_ds.map(make_stateless_noise_fn(noise_cfg),
-                                num_parallel_calls=tf.data.AUTOTUNE)
-        mlflow.log_params({"gaussian_noise": True})
-        mlflow.log_params({"gaussian_std": gaussian_std})
-    else:
-        mlflow.log_params({"gaussian_noise": False})
-        mlflow.log_params({"gaussian_std": 0})
+    callbacks.append(UpdateEpoch(augmentation_cfg))
+
+    # Adds in a batch idx to use with the stateless random number generator
+    train_ds = train_ds.enumerate()
+
+    train_ds = train_ds.map(apply_augmentation,
+                            num_parallel_calls=tf.data.AUTOTUNE)
+
+    # TODO! Log to MLFLOW augmentation values
+    # mlflow.log_params({"gaussian_noise": True})
+    # mlflow.log_params({"gaussian_std": gaussian_std})
 
     train_ds = train_ds.prefetch(tf.data.AUTOTUNE)
 
@@ -242,8 +275,9 @@ def segment_presplit_dataset(train_ds: pd.DataFrame,
                              seed: int,
                              batch_size: int,
                              steps_per_epoch: int,
-                             gaussian_noise: bool = False,
-                             gaussian_std: float = 0,
+                             noise_cfg: Optional[NoiseConfig] = None,
+                             amplitude_scale_cfg: Optional[AmplitudeScaleConfig] = None,
+                             rotation_cfg: Optional[RotationConfig] = None,
                              to_cache: bool = False
                             ) -> Tuple[
                                 tf.data.Dataset,
@@ -284,8 +318,9 @@ def segment_presplit_dataset(train_ds: pd.DataFrame,
                               batch_size=batch_size,
                               seed=seed,
                               steps_per_epoch=steps_per_epoch,
-                              gaussian_noise=gaussian_noise,
-                              gaussian_std=gaussian_std,
+                              noise_cfg=noise_cfg,
+                              amplitude_scale_cfg=amplitude_scale_cfg,
+                              rotation_cfg=rotation_cfg,
                               to_cache=to_cache)
 
     valid_ds = tf.data.Dataset.from_tensor_slices((valid_x, valid_y))
