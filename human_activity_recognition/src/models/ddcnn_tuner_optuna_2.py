@@ -274,7 +274,7 @@ def get_f1_macro_metric():
         )
 
 def get_ddcnn_model(trial: optuna.Trial,
-              input_shape: tuple[int, int, int] = (24, 3, 1),
+              input_shape: tuple[int, int, int] = (48, 3, 1),
               num_classes: int = 4):
     model = tf.keras.Sequential()
 

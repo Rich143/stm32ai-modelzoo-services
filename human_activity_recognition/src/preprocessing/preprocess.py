@@ -101,9 +101,7 @@ def segment_presplit_dataset_using_config_augmentation_tuning(
     val_ds: pd.DataFrame,
     test_ds: pd.DataFrame,
     cfg: DictConfig,
-    noise_cfg: NoiseConfig,
-    scaling_cfg: AmplitudeScaleConfig,
-    rotation_cfg: RotationConfig,
+    augmentation_config: AugmentationConfig,
     to_cache: bool = False,
 ) -> Tuple[ds, ds, ds, CallbackList]:
     return segment_presplit_dataset(
@@ -115,9 +113,7 @@ def segment_presplit_dataset_using_config_augmentation_tuning(
         seed=cfg.dataset.seed,
         batch_size=cfg.training.batch_size,
         steps_per_epoch=cfg.training.steps_per_epoch,
-        noise_cfg=noise_cfg,
-        amplitude_scale_cfg=scaling_cfg,
-        rotation_cfg=rotation_cfg,
+        augmentation_config=augmentation_config,
         to_cache=to_cache
     )
 
@@ -213,9 +209,7 @@ def build_train_ds(train_x: np.ndarray,
                    batch_size: int,
                    seed: int,
                    steps_per_epoch: int,
-                   noise_cfg: Optional[NoiseConfig] = None,
-                   amplitude_scale_cfg: Optional[AmplitudeScaleConfig] = None,
-                   rotation_cfg: Optional[RotationConfig] = None,
+                   augmentation_config: AugmentationConfig,
                    to_cache: bool = False
                   ) -> Tuple[
                       tf.data.Dataset,
@@ -242,16 +236,9 @@ def build_train_ds(train_x: np.ndarray,
 
     callbacks = []
 
-    augmentation_cfg = AugmentationConfig(
-        noise_cfg=noise_cfg,
-        amplitude_scale_cfg=amplitude_scale_cfg,
-        rotation_cfg=rotation_cfg,
-        seed=seed
-    )
+    apply_augmentation = generate_apply_augmentation(augmentation_config)
 
-    apply_augmentation = generate_apply_augmentation(augmentation_cfg)
-
-    callbacks.append(UpdateEpoch(augmentation_cfg))
+    callbacks.append(UpdateEpoch(augmentation_config))
 
     # Adds in a batch idx to use with the stateless random number generator
     train_ds = train_ds.enumerate()
@@ -275,9 +262,7 @@ def segment_presplit_dataset(train_ds: pd.DataFrame,
                              seed: int,
                              batch_size: int,
                              steps_per_epoch: int,
-                             noise_cfg: Optional[NoiseConfig] = None,
-                             amplitude_scale_cfg: Optional[AmplitudeScaleConfig] = None,
-                             rotation_cfg: Optional[RotationConfig] = None,
+                             augmentation_config: AugmentationConfig,
                              to_cache: bool = False
                             ) -> Tuple[
                                 tf.data.Dataset,
@@ -313,15 +298,15 @@ def segment_presplit_dataset(train_ds: pd.DataFrame,
         batch_size=32
 
     mlflow.log_param("batch_size_actual", batch_size)
-    train_ds, callbacks = build_train_ds(train_x=train_x,
-                              train_y=train_y,
-                              batch_size=batch_size,
-                              seed=seed,
-                              steps_per_epoch=steps_per_epoch,
-                              noise_cfg=noise_cfg,
-                              amplitude_scale_cfg=amplitude_scale_cfg,
-                              rotation_cfg=rotation_cfg,
-                              to_cache=to_cache)
+    train_ds, callbacks = build_train_ds(
+        train_x=train_x,
+        train_y=train_y,
+        batch_size=batch_size,
+        seed=seed,
+        steps_per_epoch=steps_per_epoch,
+        augmentation_config=augmentation_config,
+        to_cache=to_cache
+    )
 
     valid_ds = tf.data.Dataset.from_tensor_slices((valid_x, valid_y))
     test_ds = tf.data.Dataset.from_tensor_slices((test_x, test_y))
