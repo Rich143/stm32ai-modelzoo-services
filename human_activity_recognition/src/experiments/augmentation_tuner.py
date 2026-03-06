@@ -74,8 +74,8 @@ def get_tuned_augmentation_config(trial, seed) -> AugmentationConfig:
         amplitude_scaling_max = trial.suggest_float("amplitude_scaling_max", 1.0, 1.5)
 
         amplitude_scaling_config = AmplitudeScaleConfig(
-            amplitude_scaling_min=amplitude_scaling_min,
-            amplitude_scaling_max=amplitude_scaling_max
+            min_scale=amplitude_scaling_min,
+            max_scale=amplitude_scaling_max
         )
     else:
         amplitude_scaling_config = None
@@ -88,9 +88,9 @@ def get_tuned_augmentation_config(trial, seed) -> AugmentationConfig:
         rotation_max_yaw_deg = trial.suggest_float("rotation_max_yaw_deg", 0.0, 15.0)
 
         rotation_config = RotationConfig(
-            rotation_max_roll_deg=rotation_max_roll_deg,
-            rotation_max_pitch_deg=rotation_max_pitch_deg,
-            rotation_max_yaw_deg=rotation_max_yaw_deg
+            max_roll_deg=rotation_max_roll_deg,
+            max_pitch_deg=rotation_max_pitch_deg,
+            max_yaw_deg=rotation_max_yaw_deg
         )
     else:
         rotation_config = None
