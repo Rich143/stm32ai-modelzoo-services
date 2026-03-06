@@ -2,7 +2,9 @@ import numpy as np
 import pandas as pd
 import os
 from glob import glob
-from data_load_helpers import dataset_subject_id_to_global_subject_id, global_activity_name_to_id, copy_accel_to_xyz, fill_nans
+from preprocessing.data_load_helpers import (dataset_subject_id_to_global_subject_id,
+                                             global_activity_name_to_id,
+                                             copy_accel_to_xyz, fill_nans)
 
 def load_pamap2_from_file_and_segment(dataset_path: str,
                                       global_segment_id: int,

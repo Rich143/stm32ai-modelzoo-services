@@ -3,8 +3,9 @@ import pandas as pd
 import os
 from glob import glob
 import re
-from data_load_helpers import (global_activity_name_to_id, copy_accel_to_xyz, fill_nans,
-                               dataset_subject_id_to_global_subject_id)
+from preprocessing.data_load_helpers import (global_activity_name_to_id,
+                                             copy_accel_to_xyz, fill_nans,
+                                             dataset_subject_id_to_global_subject_id)
 
 # Central lookup: name (lowercase) → ID
 _ACTIVITY_NAME_TO_ID = {

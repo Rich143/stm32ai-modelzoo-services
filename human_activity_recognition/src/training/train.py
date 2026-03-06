@@ -11,33 +11,40 @@ import os
 import sys
 from pathlib import Path
 from timeit import default_timer as timer
-from datetime import timedelta
+from datetime import timedelta, datetime
+import uuid
 from typing import Tuple, List, Dict, Optional
 
 from hydra.core.hydra_config import HydraConfig
 from munch import DefaultMunch
 from omegaconf import DictConfig
 import numpy as np
+from sklearn.utils import class_weight
 import tensorflow as tf
 from tensorflow.keras.callbacks import EarlyStopping
 import mlflow
-import keras_tuner
+import optuna
 
-from logs_utils import log_to_file, log_last_epoch_history, LRTensorBoard
-from gpu_utils import check_training_determinism
-from models_utils import model_summary
-from cfg_utils import collect_callback_args
-from cfg_utils import get_random_seed
-from common_training import set_frozen_layers, set_dropout_rate, get_optimizer
-from models_mgt import get_model, get_loss
-import lr_schedulers
-from evaluate import evaluate_keras_model
-from visualize_utils import vis_training_curves
+from common.utils.logs_utils import log_to_file, log_last_epoch_history, LRTensorBoard
+from common.utils.gpu_utils import check_training_determinism
+from common.utils.models_utils import model_summary
+from common.utils.cfg_utils import collect_callback_args
+from common.utils.cfg_utils import get_random_seed
+from common.training.common_training import set_frozen_layers, set_dropout_rate, get_optimizer
+from utils.models_mgt import get_model, get_loss
+import common.training.lr_schedulers
+from evaluation.evaluate import evaluate_keras_model
+from common.utils.visualize_utils import vis_training_curves
 # from gmp_tuner import create_build_model as gmp_create_build_model
 # from ddcnn_tuner import create_build_model as ddcnn_create_build_model 
 # from ddcnn_2_tuner import create_build_model as ddcnn_2_create_build_model 
-from ddcnn_3_tuner import create_build_model as ddcnn_3_create_build_model 
-from data_load_helpers import global_activity_name_to_id
+# from ddcnn_tuner_optuna import get_ddcnn_model
+from models.ddcnn_tuner_optuna_2 import get_ddcnn_model
+from models.keras_tuner_model_utils import get_model_maccs, get_model_num_params
+from experiments.tuner_utils import plot_3d_pareto_plotly
+from preprocessing.data_load_helpers import global_activity_name_to_id
+from training.train_utils import get_early_stopping_cb, check_tuner_cfg
+
 
 from math import ceil
 
@@ -230,32 +237,149 @@ def get_tensorboard_profile_cb():
 
     return tb_cb
 
-def check_tuner_cfg(cfg):
-    tuner_cfg = cfg.keras_tuner
-    if tuner_cfg is None:
-        raise ValueError("\nPlease check the 'keras_tuner' section of your configuration file.")
-
-    if tuner_cfg.max_trials is None:
-        raise ValueError("\nPlease check the 'keras_tuner.max_trials' section of your configuration file.")
-
-    if tuner_cfg.executions_per_trial is None:
-        raise ValueError("\nPlease check the 'keras_tuner.executions_per_trial' section of your configuration file.")
-
-def get_early_stopping_cb(cfg: DictConfig):
-    if cfg.training.EarlyStopping is not None:
-        return tf.keras.callbacks.EarlyStopping(
-            monitor=cfg.training.EarlyStopping.monitor,
-            mode=cfg.training.EarlyStopping.mode,
-            patience=cfg.training.EarlyStopping.patience,
-            restore_best_weights=cfg.training.EarlyStopping.restore_best_weights
-        )
-
 def get_keras_tuner_tensorboard_cb(logDir: str):
     tb_cb = tf.keras.callbacks.TensorBoard(
         log_dir=logDir,
     )
 
     return tb_cb
+
+def get_tuner_objective(train_ds: tf.data.Dataset,
+                        valid_ds: tf.data.Dataset,
+                        reusable_callbacks: Optional[List[tf.keras.callbacks.Callback]],
+                        class_weights: Dict[int, float],
+                        num_classes: int,
+                        cfg,
+                        ):
+    def objective(trial):
+        # Clear clutter from previous TensorFlow graphs.
+        tf.keras.backend.clear_session()
+
+        callbacks = []
+
+        # Create a new early stopping CB for each model, maybe this fixes bug
+        # with early stopping
+        early_stop_cb = get_early_stopping_cb(cfg)
+
+        if early_stop_cb is not None:
+            print("[INFO] Adding early stopping callback")
+            callbacks.append(early_stop_cb)
+
+        if reusable_callbacks is not None:
+            callbacks.extend(reusable_callbacks)
+
+        epochs = cfg.training.epochs
+        steps_per_epoch = cfg.training.steps_per_epoch
+        input_shape = cfg.training.model.input_shape
+
+        model = get_ddcnn_model(
+            trial,
+            input_shape=input_shape,
+            num_classes=num_classes,
+        )
+
+        model.summary()
+
+        monitor = "val_f1_macro"
+
+        maccs = get_model_maccs(model)
+        params = get_model_num_params(model)
+        print("[INFO] MACCs: {}".format(maccs))
+        print("[INFO] # Params: {}".format(params))
+
+        # Train model.
+        history = model.fit(train_ds,
+                            validation_data=valid_ds,
+                            epochs=epochs,
+                            steps_per_epoch=steps_per_epoch,
+                            callbacks=callbacks,
+                            class_weight=class_weights,
+                            verbose=1)
+
+        if early_stop_cb is not None:
+            print("Early stopping metrics:")
+            # Epoch with best monitored metric
+            best_epoch = early_stop_cb.best_epoch  # 0-indexed
+            print("Best epoch:", best_epoch)
+            print("Stopped epoch:", early_stop_cb.stopped_epoch)
+            print("Best value:", early_stop_cb.best)
+            print("Wait counter:", early_stop_cb.wait)
+
+
+        f1_val_best = max(history.history[monitor])
+
+        return f1_val_best, params, maccs
+
+    return objective
+
+def train_tuner(
+    cfg: DictConfig,
+    train_ds: tf.data.Dataset,
+    valid_ds: tf.data.Dataset,
+    class_weights: Dict[int, float],
+    test_ds: Optional[tf.data.Dataset] = None,
+    callbacks: Optional[List[tf.keras.callbacks.Callback]] = None,
+) -> str:
+    """
+    Runs Keras Tuner using the provided configuration and datasets.
+
+    Args:
+        cfg (DictConfig): The entire configuration file dictionary.
+        train_ds (tf.data.Dataset): training dataset loader.
+        valid_ds (tf.data.Dataset): validation dataset loader.
+        test_ds (Optional, tf.data.Dataset): test dataset dataset loader.
+        callbacks (Optional, List[tf.keras.callbacks.Callback]): list of callbacks.
+        run_name (str): name of the run
+
+    Returns:
+        Path to the best model obtained
+    """
+    check_tuner_cfg(cfg)
+
+    output_dir = HydraConfig.get().runtime.output_dir
+
+    class_names = cfg.dataset.class_names
+    num_classes = len(class_names)
+
+    sampler = optuna.samplers.NSGAIISampler(
+        population_size=cfg.tuner.sampler.population_size,
+        mutation_prob=cfg.tuner.sampler.mutation_prob,
+        crossover_prob=cfg.tuner.sampler.crossover_prob,
+        seed=get_random_seed(cfg)
+    )
+
+    study_name = f"{cfg.tuner.experiment_name}"
+    storage_name = f"sqlite:///{output_dir}/{study_name}.db"
+
+    study = optuna.create_study(
+        directions=["maximize", "minimize", "minimize"],
+        sampler=sampler,
+        study_name=study_name,
+        storage=storage_name,
+        load_if_exists=True,
+    )
+
+    objective = get_tuner_objective(
+        train_ds=train_ds,
+        valid_ds=valid_ds,
+        reusable_callbacks=callbacks,
+        class_weights=class_weights,
+        num_classes=num_classes,
+        cfg=cfg
+    )
+
+    try:
+        study.optimize(objective, n_trials=cfg.tuner.max_trials)
+    except KeyboardInterrupt:
+        print("Study interrupted by user. You can safely resume later.")
+        print(f"Study is saved to {storage_name}")
+
+    plot_3d_pareto_plotly(
+        study,
+        log_scale_params=True,
+        log_scale_maccs=True
+    )
+
 
 def train_keras_tuner(cfg: DictConfig,
                       train_ds: tf.data.Dataset,

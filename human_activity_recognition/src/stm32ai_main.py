@@ -24,39 +24,23 @@ import tensorflow as tf
 
 from omegaconf import DictConfig
 import mlflow
-import mlflow.keras
 import argparse
 
-sys.path.append(os.path.join(os.path.dirname(__file__), '../../common'))
-sys.path.append(os.path.join(os.path.dirname(__file__), '../../common/benchmarking'))
-sys.path.append(os.path.join(os.path.dirname(__file__), '../../common/deployment'))
-sys.path.append(os.path.join(os.path.dirname(__file__), '../../common/quantization'))
-sys.path.append(os.path.join(os.path.dirname(__file__), '../../common/optimization'))
-sys.path.append(os.path.join(os.path.dirname(__file__), '../../common/evaluation'))
-sys.path.append(os.path.join(os.path.dirname(__file__), '../../common/training'))
-sys.path.append(os.path.join(os.path.dirname(__file__), '../../common/utils'))
-sys.path.append(os.path.join(os.path.dirname(__file__), '../deployment'))
-sys.path.append(os.path.join(os.path.dirname(__file__), './preprocessing'))
-sys.path.append(os.path.join(os.path.dirname(__file__), './training'))
-sys.path.append(os.path.join(os.path.dirname(__file__), './utils'))
-sys.path.append(os.path.join(os.path.dirname(__file__), './evaluation'))
-sys.path.append(os.path.join(os.path.dirname(__file__), './models'))
-
-
-from gpu_utils import set_gpu_memory_limit
-from cfg_utils import get_random_seed
-from visualize_utils import display_figures
-from parse_config import get_config
-from train import train
-from evaluate import evaluate
-from deploy import deploy
-from common_benchmark import benchmark, cloud_connect
+from common.utils.gpu_utils import set_gpu_memory_limit
+from common.utils.cfg_utils import get_random_seed
+from common.utils.visualize_utils import display_figures
+from utils.parse_config import get_config
+from training.train import train
+# from evaluation.evaluate import evaluate
+# from common.deploy import deploy
+# from common.benchmarking.common_benchmark import benchmark, cloud_connect
 from typing import Optional
-from logs_utils import log_to_file
+from common.utils.logs_utils import log_to_file
 from experiments.experiment_utils import mlflow_init
 from experiments.input_len_sweep import input_len_experiment
 from experiments.gaussian_noise_sweep import gaussian_noise_experiment
-from experiments.keras_tuner import run_keras_tuner
+from experiments.tuner import run_tuner
+from experiments.augmentation_tuner import run_augmentation_tuner
 
 def chain_tb(cfg: DictConfig = None, train_ds: tf.data.Dataset = None,
              valid_ds: tf.data.Dataset = None, test_ds: tf.data.Dataset = None) -> None:
@@ -95,8 +79,11 @@ def experiment_mode(configs: DictConfig) -> None:
     else:
         raise ValueError("Unknown sweep axis: {}".format(configs.experiment.tags.sweep_axis))
 
-def keras_tuner_mode(configs: DictConfig, ) -> None:
-    run_keras_tuner(configs)
+def tuner_mode(configs: DictConfig, ) -> None:
+    if configs.tuner.experiment_name == "ddcnn_augmentation_tuner":
+        run_augmentation_tuner(configs)
+    else:
+        run_tuner(configs)
 
 def process_mode(mode: str = None,
                  configs: DictConfig = None,
@@ -202,8 +189,8 @@ def main(cfg: DictConfig) -> None:
 
     # Extract the mode from the command-line arguments
     mode = cfg.operation_mode
-    valid_modes = ['experiment',  'keras_tuner']
-    # valid_modes = ['training',  'experiment',  'keras_tuner', 'evaluation', 'chain_tb']
+    valid_modes = ['experiment',  'tuner']
+    # valid_modes = ['training',  'experiment',  'tuner', 'evaluation', 'chain_tb']
     if mode in valid_modes:
         if mode == 'experiment':
             print("[INFO] Starting experiment mode")
@@ -215,12 +202,12 @@ def main(cfg: DictConfig) -> None:
             log_to_file(cfg.output_dir, f'operation_mode: {mode}')
             experiment_mode(configs=cfg)
             print('[INFO] : Experiment complete.')
-        elif mode == 'keras_tuner':
-            print("[INFO] Starting keras tuner mode")
+        elif mode == 'tuner':
+            print("[INFO] Starting hyperparameter tuner mode")
             # logging the operation_mode in the output_dir/stm32ai_main.log file
             log_to_file(cfg.output_dir, f'operation_mode: {mode}')
-            keras_tuner_mode(configs=cfg)
-            print('[INFO] : Keras tuner complete.')
+            tuner_mode(configs=cfg)
+            print('[INFO] : Hyperparameter tuner complete.')
         else:
             raise NotImplementedError
             # # Perform further processing based on the selected mode

@@ -24,10 +24,10 @@ import tensorflow as tf
 import tqdm
 from typing import Optional
 
-from models_utils import compute_confusion_matrix, count_h5_parameters
-from visualize_utils import plot_confusion_matrix
-from models_mgt import get_loss
-from logs_utils import log_to_file
+from common.utils.models_utils import compute_confusion_matrix, count_h5_parameters
+from common.utils.visualize_utils import plot_confusion_matrix
+from utils.models_mgt import get_loss
+from common.utils.logs_utils import log_to_file
 
 def log_per_class_metrics(y_true, y_pred, class_names, prefix="test"):
     # 1) Per-class PRF1 as scalar metrics (best for Compare view)

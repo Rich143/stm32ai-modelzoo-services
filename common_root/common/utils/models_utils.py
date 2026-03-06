@@ -19,7 +19,7 @@ from pathlib import Path
 # from onnx import ModelProto
 # import onnxruntime
 import mlflow
-from logs_utils import log_to_file
+from common.utils.logs_utils import log_to_file
 
 def ai_interp_input_quant(ai_interp, data: np.array, data_scale: float, data_offset: float, file_extension: str):
     ai_runner_input_details = ai_interp.get_inputs()[0]  # input
