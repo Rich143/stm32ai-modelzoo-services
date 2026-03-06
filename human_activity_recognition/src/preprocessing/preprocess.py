@@ -10,9 +10,9 @@
 from omegaconf import DictConfig
 from typing import Tuple, TypeAlias, Any, List, Optional
 
-from data_loader import load_datasets, preprocess_dataset
-from data_load_helpers import global_activity_id_to_name
-from data_augmentation import (NoiseConfig, AmplitudeScaleConfig,
+from preprocessing.data_loader import load_datasets, preprocess_dataset
+from preprocessing.data_load_helpers import global_activity_id_to_name
+from preprocessing.data_augmentation import (NoiseConfig, AmplitudeScaleConfig,
                                RotationConfig, AugmentationConfig,
                                generate_apply_augmentation)
 
@@ -81,6 +81,13 @@ def segment_presplit_dataset_using_config(train_ds: pd.DataFrame,
     else:
         rotation_cfg = None
 
+    augmentation_config = AugmentationConfig(
+        seed=cfg.dataset.seed,
+        noise_cfg=noise_cfg,
+        amplitude_scale_cfg=scaling_cfg,
+        rotation_cfg=rotation_cfg
+    )
+
     return segment_presplit_dataset(
         train_ds=train_ds,
         val_ds=val_ds,
@@ -90,9 +97,7 @@ def segment_presplit_dataset_using_config(train_ds: pd.DataFrame,
         seed=cfg.dataset.seed,
         batch_size=cfg.training.batch_size,
         steps_per_epoch=cfg.training.steps_per_epoch,
-        noise_cfg=noise_cfg,
-        amplitude_scale_cfg=scaling_cfg,
-        rotation_cfg=rotation_cfg,
+        augmentation_config=augmentation_config,
         to_cache=to_cache
     )
 
@@ -118,7 +123,7 @@ def segment_presplit_dataset_using_config_augmentation_tuning(
     )
 
 class UpdateEpoch(tf.keras.callbacks.Callback):
-    def __init__(self, cfg: data_augmentation.AugmentationConfig):
+    def __init__(self, cfg: AugmentationConfig):
         super().__init__()
         self.cfg = cfg
 

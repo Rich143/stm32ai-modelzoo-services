@@ -9,21 +9,21 @@
 import os
 import functools
 import typing
-from stm32ai_dc.backend.cloud.generate_nbg_service import GenerateNbgService
-from stm32ai_dc.backend.cloud.benchmark_service import BenchmarkService
-from stm32ai_dc.backend.cloud.file_service import FileService
-from stm32ai_dc.backend.cloud.helpers import get_supported_versions
-from stm32ai_dc.backend.cloud.login_service import LoginService
-from stm32ai_dc.backend.cloud.user_service import UserService
-from stm32ai_dc.backend.cloud.stm32ai_service import Stm32AiService
-from stm32ai_dc.errors import GenerateNbgFailure, AnalyzeServerError, BenchmarkServerError, InvalidCrendetialsException
-from stm32ai_dc.errors import FileFormatError, GenerateServerError
-from stm32ai_dc.errors import InternalErrorThatShouldNotHappened
-from stm32ai_dc.errors import ParameterError, ValidateServerError
-from stm32ai_dc.errors import LoginFailureException
-from stm32ai_dc.types import AnalyzeResult, BackendVersionType, BenchmarkResult, BoardData, MpuBenchmarkResult, MpuParameters
-from stm32ai_dc.types import GenerateResult, Stm32AiBackend, CliParameters
-from stm32ai_dc.types import ValidateResult, ValidateResultMetrics
+from common.stm32ai_dc.backend.cloud.generate_nbg_service import GenerateNbgService
+from common.stm32ai_dc.backend.cloud.benchmark_service import BenchmarkService
+from common.stm32ai_dc.backend.cloud.file_service import FileService
+from common.stm32ai_dc.backend.cloud.helpers import get_supported_versions
+from common.stm32ai_dc.backend.cloud.login_service import LoginService
+from common.stm32ai_dc.backend.cloud.user_service import UserService
+from common.stm32ai_dc.backend.cloud.stm32ai_service import Stm32AiService
+from common.stm32ai_dc.errors import GenerateNbgFailure, AnalyzeServerError, BenchmarkServerError, InvalidCrendetialsException
+from common.stm32ai_dc.errors import FileFormatError, GenerateServerError
+from common.stm32ai_dc.errors import InternalErrorThatShouldNotHappened
+from common.stm32ai_dc.errors import ParameterError, ValidateServerError
+from common.stm32ai_dc.errors import LoginFailureException
+from common.stm32ai_dc.types import AnalyzeResult, BackendVersionType, BenchmarkResult, BoardData, MpuBenchmarkResult, MpuParameters
+from common.stm32ai_dc.types import GenerateResult, Stm32AiBackend, CliParameters
+from common.stm32ai_dc.types import ValidateResult, ValidateResultMetrics
 
 
 class CloudBackend(Stm32AiBackend):

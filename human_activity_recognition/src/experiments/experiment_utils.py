@@ -10,7 +10,7 @@ import numpy as np
 from omegaconf import DictConfig
 from sklearn.model_selection import StratifiedGroupKFold
 
-from data_load_helpers import (get_datasets_list,
+from preprocessing.data_load_helpers import (get_datasets_list,
                                dataset_subject_id_to_global_subject_id,
                                dataset_name_to_id)
 

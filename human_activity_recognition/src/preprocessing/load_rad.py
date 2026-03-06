@@ -6,8 +6,9 @@ import re
 from typing import Tuple
 import sys
 
-from data_load_helpers import (fill_nans, copy_accel_to_xyz, dataset_subject_id_to_global_subject_id,
-                               global_activity_name_to_id)
+from preprocessing.data_load_helpers import (fill_nans, copy_accel_to_xyz,
+                                             dataset_subject_id_to_global_subject_id,
+                                             global_activity_name_to_id)
 
 # Central lookup: name (lowercase) → ID
 _USERNAME_TO_ID = {

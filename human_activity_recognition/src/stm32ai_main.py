@@ -24,39 +24,23 @@ import tensorflow as tf
 
 from omegaconf import DictConfig
 import mlflow
-import mlflow.keras
 import argparse
 
-sys.path.append(os.path.join(os.path.dirname(__file__), '../../common'))
-sys.path.append(os.path.join(os.path.dirname(__file__), '../../common/benchmarking'))
-sys.path.append(os.path.join(os.path.dirname(__file__), '../../common/deployment'))
-sys.path.append(os.path.join(os.path.dirname(__file__), '../../common/quantization'))
-sys.path.append(os.path.join(os.path.dirname(__file__), '../../common/optimization'))
-sys.path.append(os.path.join(os.path.dirname(__file__), '../../common/evaluation'))
-sys.path.append(os.path.join(os.path.dirname(__file__), '../../common/training'))
-sys.path.append(os.path.join(os.path.dirname(__file__), '../../common/utils'))
-sys.path.append(os.path.join(os.path.dirname(__file__), '../deployment'))
-sys.path.append(os.path.join(os.path.dirname(__file__), './preprocessing'))
-sys.path.append(os.path.join(os.path.dirname(__file__), './training'))
-sys.path.append(os.path.join(os.path.dirname(__file__), './utils'))
-sys.path.append(os.path.join(os.path.dirname(__file__), './evaluation'))
-sys.path.append(os.path.join(os.path.dirname(__file__), './models'))
-
-
-from gpu_utils import set_gpu_memory_limit
-from cfg_utils import get_random_seed
-from visualize_utils import display_figures
-from parse_config import get_config
-from train import train
-from evaluate import evaluate
-from deploy import deploy
-from common_benchmark import benchmark, cloud_connect
+from common.utils.gpu_utils import set_gpu_memory_limit
+from common.utils.cfg_utils import get_random_seed
+from common.utils.visualize_utils import display_figures
+from utils.parse_config import get_config
+from training.train import train
+# from evaluation.evaluate import evaluate
+# from common.deploy import deploy
+# from common.benchmarking.common_benchmark import benchmark, cloud_connect
 from typing import Optional
-from logs_utils import log_to_file
+from common.utils.logs_utils import log_to_file
 from experiments.experiment_utils import mlflow_init
 from experiments.input_len_sweep import input_len_experiment
 from experiments.gaussian_noise_sweep import gaussian_noise_experiment
 from experiments.tuner import run_tuner
+from experiments.augmentation_tuner import run_augmentation_tuner
 
 def chain_tb(cfg: DictConfig = None, train_ds: tf.data.Dataset = None,
              valid_ds: tf.data.Dataset = None, test_ds: tf.data.Dataset = None) -> None:
@@ -96,7 +80,10 @@ def experiment_mode(configs: DictConfig) -> None:
         raise ValueError("Unknown sweep axis: {}".format(configs.experiment.tags.sweep_axis))
 
 def tuner_mode(configs: DictConfig, ) -> None:
-    run_tuner(configs)
+    if configs.tuner.experiment_name == "ddcnn_augmentation_tuner":
+        run_augmentation_tuner(configs)
+    else:
+        run_tuner(configs)
 
 def process_mode(mode: str = None,
                  configs: DictConfig = None,

@@ -11,9 +11,9 @@ import os
 from pathlib import Path
 import re
 from hydra.core.hydra_config import HydraConfig
-from cfg_utils import postprocess_config_dict, check_config_attributes, parse_tools_section, parse_benchmarking_section, \
-                      parse_mlflow_section, parse_top_level, parse_general_section, parse_training_section, \
-                      parse_deployment_section, check_hardware_type
+from common.utils.cfg_utils import postprocess_config_dict, check_config_attributes, parse_tools_section, parse_benchmarking_section, \
+        parse_mlflow_section, parse_top_level, parse_general_section, parse_training_section, \
+        parse_deployment_section, check_hardware_type
 from omegaconf import OmegaConf, DictConfig
 from munch import DefaultMunch
 import tensorflow as tf
@@ -53,7 +53,8 @@ def parse_preprocessing_section(cfg: DictConfig) -> None:
         cfg (DictConfig): configuration dictionary containing the preprocessing info
     '''
 
-    legal = ["gravity_rot_sup", "gaussian_noise", "gaussian_std", "sample_rate", "mean_group_delay"]
+    legal = ["gravity_rot_sup", "gaussian_noise", "amplitude_scaling", "rotation",
+             "sample_rate", "mean_group_delay"]
     check_config_attributes(cfg, specs={"legal": legal, "all": legal}, section="preprocessing")
 
 

@@ -15,11 +15,11 @@ import numpy as np
 import tensorflow as tf
 from omegaconf import DictConfig
 
-from cfg_utils import check_attributes
-from models_utils import transfer_pretrained_weights, check_model_support
-from ign import get_ign
-from gmp import get_gmp
-from custom_model import get_custom_model
+from common.utils.cfg_utils import check_attributes
+from common.utils.models_utils import transfer_pretrained_weights, check_model_support
+from models.ign import get_ign
+from models.gmp import get_gmp
+from models.custom_model import get_custom_model
 
 
 def get_model(cfg: DictConfig = None,

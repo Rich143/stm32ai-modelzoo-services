@@ -17,10 +17,10 @@ from subprocess import Popen
 from typing import List, Union, Optional, Tuple, Dict
 import mlflow
 from hydra.core.hydra_config import HydraConfig
-from stm32ai_dc import (CliLibraryIde, CliLibrarySerie, CliParameters, MpuParameters, MpuEngine,
+from common.stm32ai_dc.stm32ai import (CliLibraryIde, CliLibrarySerie, CliParameters, MpuParameters, MpuEngine,
                         CloudBackend, Stm32Ai)
-from stm32ai_dc.errors import BenchmarkServerError
-from stm32ai_dc.types import AtonParameters
+from common.stm32ai_dc.errors import BenchmarkServerError
+from common.stm32ai_dc.types import AtonParameters
 
 from omegaconf import DictConfig
 from logs_utils import log_to_file

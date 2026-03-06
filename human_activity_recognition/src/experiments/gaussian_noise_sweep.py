@@ -5,8 +5,8 @@ from datetime import datetime
 import uuid
 
 from omegaconf import DictConfig
-from preprocess import load_and_preprocess_dataset, segment_presplit_dataset_using_config
-from train import train
+from preprocessing.preprocess import load_and_preprocess_dataset, segment_presplit_dataset_using_config
+from training.train import train
 from experiments.experiment_utils import (kfold_train_val_test, start_child_run,
                                           DatasetTriplet, SubjectListTriplet,
                                           get_cv_subjects)
