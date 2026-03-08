@@ -10,6 +10,10 @@
 import tensorflow as tf
 import tensorflow.keras.layers as layers
 
+from omegaconf import DictConfig
+
+from common.training.common_training import get_optimizer
+
 def get_f1_macro_metric():
     return tf.keras.metrics.F1Score(
             average="macro",
@@ -17,7 +21,8 @@ def get_f1_macro_metric():
         )
 
 def get_richard_v1(input_shape: tuple[int] = (48, 3, 1),
-                   num_classes: int = 4):
+                   num_classes: int = 4,
+                   optimizer_cfg: DictConfig = None):
     """
     Builds and returns an ign model for human_activity_recognition.
     Args:
@@ -63,8 +68,9 @@ def get_richard_v1(input_shape: tuple[int] = (48, 3, 1),
     model = tf.keras.Model(inputs=inputs, outputs=[outputs], name="richard_v1")
 
     f1_metric = get_f1_macro_metric()
+    optimizer = get_optimizer(optimizer_cfg)
 
-    model.compile(optimizer='adam', loss='categorical_crossentropy',
+    model.compile(optimizer=optimizer, loss='categorical_crossentropy',
                   metrics=['accuracy', f1_metric])
 
     return model

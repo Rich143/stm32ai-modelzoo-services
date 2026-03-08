@@ -23,15 +23,16 @@ from models.custom_model import get_custom_model
 from models.richard_v1 import get_richard_v1
 
 
-def get_model(cfg: DictConfig = None,
-                    num_classes: int = None,
-                    dropout: float = None,
-                    section: str = None) -> tf.keras.Model:
+def get_model(model_cfg: DictConfig,
+              optimizer_cfg: DictConfig,
+              num_classes: int = None,
+              dropout: float = None,
+              section: str = None) -> tf.keras.Model:
     """
     Returns a Keras model object based on the specified configuration and parameters.
 
     Args:
-        cfg (DictConfig): A dictionary containing the configuration for the model.
+        model_cfg (DictConfig): A dictionary containing the configuration for the model.
         num_classes (int): The number of classes for the model.
         dropout (float): The dropout rate for the model.
         section (str): The section of the model to be used.
@@ -50,8 +51,8 @@ def get_model(cfg: DictConfig = None,
     message = "\nPlease check the 'training.model' section of your configuration file."
 
     # Check if the specified model is supported
-    model_name = cfg.name
-    model_version = cfg.version
+    model_name = model_cfg.name
+    model_version = model_cfg.version
     check_model_support(model_name,
                         version=model_version, 
                         supported_models=supported_models,
@@ -59,57 +60,58 @@ def get_model(cfg: DictConfig = None,
 
     # if model name is "ign"
     if model_name.lower() == "ign":
-        check_attributes(cfg, expected=["name", "input_shape"],
+        check_attributes(model_cfg, expected=["name", "input_shape"],
                          optional=["pretrained_model_path", "dropout"], section=section)
-        if cfg.input_shape[0] < 20:
+        if model_cfg.input_shape[0] < 20:
             raise ValueError("Expecting window length to be at least 20 samples. "
-                             f"Received window length {cfg.input_shape[0]}{message}")
-        model = get_ign(input_shape=cfg.input_shape,
+                             f"Received window length {model_cfg.input_shape[0]}{message}")
+        model = get_ign(input_shape=model_cfg.input_shape,
                         num_classes=num_classes,
                         dropout=dropout)
-        if cfg.pretrained_model_path:
+        if model_cfg.pretrained_model_path:
             transfer_pretrained_weights(
                         model,
-                        source_model_path=cfg.pretrained_model_path,
+                        source_model_path=model_cfg.pretrained_model_path,
                         end_layer_index=-1,
                         target_model_name="ign")
     # if model name is "ign"
     elif model_name.lower() == "gmp":
-        check_attributes(cfg, expected=["name", "input_shape"],
+        check_attributes(model_cfg, expected=["name", "input_shape"],
                          optional=["pretrained_model_path", "dropout"])
-        if cfg.input_shape[0] < 20:
+        if model_cfg.input_shape[0] < 20:
             raise ValueError("Expecting window length to be at least 20 samples. "
-                             f"Received window length {cfg.input_shape[0]}{message}")
-        model = get_gmp(input_shape=cfg.input_shape,
+                             f"Received window length {model_cfg.input_shape[0]}{message}")
+        model = get_gmp(input_shape=model_cfg.input_shape,
                         num_classes=num_classes,
                         dropout=dropout)
-        if cfg.pretrained_model_path:
+        if model_cfg.pretrained_model_path:
             transfer_pretrained_weights(
                         model,
-                        source_model_path=cfg.pretrained_model_path,
+                        source_model_path=model_cfg.pretrained_model_path,
                         end_layer_index=-1,
                         target_model_name="gmp")
 
     elif model_name == "custom":
-        check_attributes(cfg, expected=["name", "input_shape"],
+        check_attributes(model_cfg, expected=["name", "input_shape"],
                          optional=["pretrained_model_path", "dropout"],
                          section=section)
-        model = get_custom_model(input_shape=cfg.input_shape,
+        model = get_custom_model(input_shape=model_cfg.input_shape,
                                  num_classes=num_classes,
                                  dropout=dropout)
-        if cfg.pretrained_model_path:
+        if model_cfg.pretrained_model_path:
             transfer_pretrained_weights(
                         model,
-                        source_model_path=cfg.pretrained_model_path,
+                        source_model_path=model_cfg.pretrained_model_path,
                         end_layer_index=-1,
                         target_model_name="custom")
     elif model_name == "richard_v1":
-        model = get_richard_v1(input_shape=cfg.input_shape,
-                               num_classes=num_classes)
+        model = get_richard_v1(input_shape=model_cfg.input_shape,
+                               num_classes=num_classes,
+                               optimizer_cfg=optimizer_cfg)
     else:
         raise ValueError("Unspported model configurations used."
                          "Expected model names are `ign`, `gmp`, or `custom`.\n"
-                         f"provided value is: {cfg.name}", message)
+                         f"provided value is: {model_cfg.name}", message)
 
     return model
 

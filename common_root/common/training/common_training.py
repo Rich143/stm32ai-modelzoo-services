@@ -166,6 +166,11 @@ def get_optimizer(cfg: DictConfig) -> tf.keras.optimizers:
                 raise ValueError(f"\nUnknown learning rate scheduler `{lr_schedule_name}`{message}")
 
             lr = lr_scheduler
+        if "learning_rate" in optimizer_args:
+            lr = optimizer_args["learning_rate"]
+
+    if lr is None:
+        raise ValueError("\nNo learning rate found. Please check the 'training.optimizer' section of your configuration file.")
 
     if optimizer_name == 'Adam':
         optimizer = tf.keras.optimizers.Adam(learning_rate=lr)

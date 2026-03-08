@@ -168,7 +168,7 @@ def get_config(config_data: DictConfig) -> DefaultMunch:
         model_type_used = bool(cfg.general.model_type)
         legal = ["model", "batch_size", "epochs", "optimizer", "dropout", "frozen_layers",
                  "callbacks", "resume_training_from", "trained_model_path",
-                 "steps_per_epoch", "steps_per_execution"]
+                 "steps_per_epoch", "steps_per_execution", "EarlyStopping"]
         parse_training_section(cfg.training,
                                model_path_used=model_path_used,
                                model_type_used=model_type_used,

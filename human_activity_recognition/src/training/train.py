@@ -69,7 +69,8 @@ def load_model_to_train(cfg, model_path=None, num_classes=None) -> tf.keras.Mode
 
     if cfg.model:
         # Model from the zoo
-        model = get_model(cfg=cfg.model,
+        model = get_model(model_cfg=cfg.model,
+                          optimizer_cfg=cfg.optimizer,
                           num_classes=num_classes,
                           dropout=cfg.dropout,
                           section="training.model")
@@ -140,8 +141,8 @@ def get_callbacks(callbacks_dict: DictConfig, output_dir: str = None, logs_dir: 
     """
 
     message = "\nPlease check the 'training.callbacks' section of your configuration file."
-    lr_scheduler_names = lr_schedulers.get_scheduler_names()
-    num_lr_schedulers = 0
+    # lr_scheduler_names = lr_schedulers.get_scheduler_names()
+    # num_lr_schedulers = 0
 
     # Generate the callbacks used in the config file (there may be none)
     callback_list = []
@@ -151,8 +152,8 @@ def get_callbacks(callbacks_dict: DictConfig, output_dir: str = None, logs_dir: 
         for name in callbacks_dict.keys():
             if name in ("ModelCheckpoint", "TensorBoard", "CSVLogger"):
                 raise ValueError(f"\nThe `{name}` callback is built-in and can't be redefined.{message}")
-            if name in lr_scheduler_names:
-                text = f"lr_schedulers.{name}"
+            # if name in lr_scheduler_names:
+                # text = f"lr_schedulers.{name}"
             else:
                 text = f"tf.keras.callbacks.{name}"
 
@@ -166,12 +167,12 @@ def get_callbacks(callbacks_dict: DictConfig, output_dir: str = None, logs_dir: 
                                  f"or invalid\nReceived: {text}{message}") from error
             callback_list.append(callback)
 
-            if name in lr_scheduler_names + ["ReduceLROnPlateau", "LearningRateScheduler"]:
-                num_lr_schedulers += 1
+            # if name in lr_scheduler_names + ["ReduceLROnPlateau", "LearningRateScheduler"]:
+                # num_lr_schedulers += 1
 
     # Check that there is only one scheduler
-    if num_lr_schedulers > 1:
-        raise ValueError(f"\nFound more than one learning rate scheduler{message}")
+    # if num_lr_schedulers > 1:
+        # raise ValueError(f"\nFound more than one learning rate scheduler{message}")
 
     # Add the Keras callback that saves the best model obtained so far
     callback = tf.keras.callbacks.ModelCheckpoint(
@@ -515,8 +516,11 @@ def train(cfg: DictConfig, run_name: str = "base") -> str:
     callbacks.append(PrintLREpoch())
 
     # callbacks.append(get_tensorboard_profile_cb())
+    early_stop_cb = get_early_stopping_cb(cfg)
 
-    early_stop_cb = next((cb for cb in callbacks if isinstance(cb, EarlyStopping)), None)
+    if early_stop_cb is not None:
+        print("[INFO] Adding early stopping callback")
+        callbacks.append(early_stop_cb)
 
     # check if determinism can be enabled
     if cfg.general.deterministic_ops:
@@ -556,6 +560,15 @@ def train(cfg: DictConfig, run_name: str = "base") -> str:
     average_time_per_epoch = round(fit_run_time / (int(last_epoch) + 1),2)
     print("Training runtime: " + str(timedelta(seconds=fit_run_time)))
     log_to_file(cfg.output_dir, (f"Training runtime : {fit_run_time} s\n" + f"Average time per epoch : {average_time_per_epoch} s"))
+
+    if early_stop_cb is not None:
+        print("Early stopping metrics:")
+        # Epoch with best monitored metric
+        best_epoch = early_stop_cb.best_epoch  # 0-indexed
+        print("Best epoch:", best_epoch)
+        print("Stopped epoch:", early_stop_cb.stopped_epoch)
+        print("Best value:", early_stop_cb.best)
+        print("Wait counter:", early_stop_cb.wait)
 
     with open(runtime_csv_path, "w", encoding='utf-8') as f:
         f.write("epochs,runtime\n")

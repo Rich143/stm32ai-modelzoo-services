@@ -59,15 +59,15 @@ def segment_presplit_dataset_using_config(train_ds: pd.DataFrame,
 
     if cfg.preprocessing.gaussian_noise is not None:
         noise_cfg = NoiseConfig(
-            preprocess_cfg.gaussian_noise.noise_std
+            preprocess_cfg.gaussian_noise.gaussian_std
         )
     else:
         noise_cfg = None
 
     if cfg.preprocessing.amplitude_scaling is not None:
         scaling_cfg = AmplitudeScaleConfig(
-            preprocess_cfg.amplitude_scaling.min_scale,
-            preprocess_cfg.amplitude_scaling.max_scale
+            preprocess_cfg.amplitude_scaling.min_scaling,
+            preprocess_cfg.amplitude_scaling.max_scaling
         )
     else:
         scaling_cfg = None
