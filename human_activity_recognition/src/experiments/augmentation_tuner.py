@@ -38,7 +38,7 @@ def run_augmentation_tuner(configs: DictConfig) -> None:
 def get_tuned_augmentation_config(trial, seed) -> AugmentationConfig:
     noise_enabled = trial.suggest_categorical("noise_enabled", [True, False])
     if noise_enabled:
-        noise_std = trial.suggest_float("noise_std", 0.0, 0.3)
+        noise_std = trial.suggest_float("noise_std", 0.07, 0.3)
         noise_config = NoiseConfig(noise_std=noise_std)
     else:
         noise_config = None
@@ -46,8 +46,8 @@ def get_tuned_augmentation_config(trial, seed) -> AugmentationConfig:
     amplitude_scaling_enabled = trial.suggest_categorical("amplitude_scaling_enabled",
                                                           [True, False])
     if amplitude_scaling_enabled:
-        amplitude_scaling_min = trial.suggest_float("amplitude_scaling_min", 0.5, 1.0)
-        amplitude_scaling_max = trial.suggest_float("amplitude_scaling_max", 1.0, 1.5)
+        amplitude_scaling_min = trial.suggest_float("amplitude_scaling_min", 0.8, 1.5)
+        amplitude_scaling_max = trial.suggest_float("amplitude_scaling_max", 0.8, 1.5)
 
         amplitude_scaling_config = AmplitudeScaleConfig(
             min_scale=amplitude_scaling_min,
@@ -59,9 +59,9 @@ def get_tuned_augmentation_config(trial, seed) -> AugmentationConfig:
     rotation_enabled = trial.suggest_categorical("rotation_enabled", [True, False])
 
     if rotation_enabled:
-        rotation_max_roll_deg = trial.suggest_float("rotation_max_roll_deg", 0.0, 5.0)
-        rotation_max_pitch_deg = trial.suggest_float("rotation_max_pitch_deg", 0.0, 5.0)
-        rotation_max_yaw_deg = trial.suggest_float("rotation_max_yaw_deg", 0.0, 15.0)
+        rotation_max_roll_deg = trial.suggest_float("rotation_max_roll_deg", 2.0, 6.0)
+        rotation_max_pitch_deg = trial.suggest_float("rotation_max_pitch_deg", 2.0, 6.0)
+        rotation_max_yaw_deg = trial.suggest_float("rotation_max_yaw_deg", 10.0, 200.0)
 
         rotation_config = RotationConfig(
             max_roll_deg=rotation_max_roll_deg,
