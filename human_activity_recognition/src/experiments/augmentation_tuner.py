@@ -46,8 +46,8 @@ def get_tuned_augmentation_config(trial, seed) -> AugmentationConfig:
     amplitude_scaling_enabled = trial.suggest_categorical("amplitude_scaling_enabled",
                                                           [True, False])
     if amplitude_scaling_enabled:
-        amplitude_scaling_min = trial.suggest_float("amplitude_scaling_min", 0.8, 1.5)
-        amplitude_scaling_max = trial.suggest_float("amplitude_scaling_max", 0.8, 1.5)
+        amplitude_scaling_min = trial.suggest_float("amplitude_scaling_min", 0.5, 1.0)
+        amplitude_scaling_max = trial.suggest_float("amplitude_scaling_max", 1.0, 2.5)
 
         amplitude_scaling_config = AmplitudeScaleConfig(
             min_scale=amplitude_scaling_min,
