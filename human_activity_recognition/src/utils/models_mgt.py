@@ -20,6 +20,7 @@ from common.utils.models_utils import transfer_pretrained_weights, check_model_s
 from models.ign import get_ign
 from models.gmp import get_gmp
 from models.custom_model import get_custom_model
+from models.richard_v1 import get_richard_v1
 
 
 def get_model(cfg: DictConfig = None,
@@ -42,6 +43,7 @@ def get_model(cfg: DictConfig = None,
     supported_models = {
         'ign' : None,
         'gmp' : None,
+        'richard_v1': None,
         'custom' : None
     }
 
@@ -101,6 +103,9 @@ def get_model(cfg: DictConfig = None,
                         source_model_path=cfg.pretrained_model_path,
                         end_layer_index=-1,
                         target_model_name="custom")
+    elif model_name == "richard_v1":
+        model = get_richard_v1(input_shape=cfg.input_shape,
+                               num_classes=num_classes)
     else:
         raise ValueError("Unspported model configurations used."
                          "Expected model names are `ign`, `gmp`, or `custom`.\n"

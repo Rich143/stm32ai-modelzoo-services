@@ -85,6 +85,9 @@ def tuner_mode(configs: DictConfig, ) -> None:
     else:
         run_tuner(configs)
 
+def train_mode(configs: DictConfig, ) -> None:
+    train(cfg=configs)
+
 def process_mode(mode: str = None,
                  configs: DictConfig = None,
                  train_ds: tf.data.Dataset = None,
@@ -189,8 +192,7 @@ def main(cfg: DictConfig) -> None:
 
     # Extract the mode from the command-line arguments
     mode = cfg.operation_mode
-    valid_modes = ['experiment',  'tuner']
-    # valid_modes = ['training',  'experiment',  'tuner', 'evaluation', 'chain_tb']
+    valid_modes = ['experiment',  'tuner', 'training']
     if mode in valid_modes:
         if mode == 'experiment':
             print("[INFO] Starting experiment mode")
@@ -208,6 +210,12 @@ def main(cfg: DictConfig) -> None:
             log_to_file(cfg.output_dir, f'operation_mode: {mode}')
             tuner_mode(configs=cfg)
             print('[INFO] : Hyperparameter tuner complete.')
+        elif mode == 'training':
+            print("[INFO] Starting training mode")
+            # logging the operation_mode in the output_dir/stm32ai_main.log file
+            log_to_file(cfg.output_dir, f'operation_mode: {mode}')
+            train_mode(configs=cfg)
+            print('[INFO] : Training complete.')
         else:
             raise NotImplementedError
             # # Perform further processing based on the selected mode
@@ -220,9 +228,7 @@ def main(cfg: DictConfig) -> None:
                          # valid_ds=valid_ds,
                          # test_ds=test_ds)
     else:
-        # Process the selected mode
-        process_mode(mode=mode,
-                     configs=cfg)
+        raise ValueError(f"Invalid mode: {mode}")
 
 
 if __name__ == "__main__":

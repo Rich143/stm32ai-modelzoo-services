@@ -477,6 +477,60 @@ def print_pareto_hyperparameters(study):
 
         print("\n")
 
+def print_top_trials(study, top_n=10):
+    """
+    Prints the top N trials of a single-objective Optuna study
+    in table format sorted by F1 score (highest first).
+    """
+
+    trials = [t for t in study.trials if t.value is not None]
+
+    if not trials:
+        print("No completed trials found.")
+        return
+
+    # -------------------------------------------------
+    # Sort trials by F1 descending
+    # -------------------------------------------------
+    trials_sorted = sorted(
+        trials,
+        key=lambda t: t.value,
+        reverse=True,
+    )[:top_n]
+
+    print(f"\nTop {len(trials_sorted)} Trials by F1 Score\n")
+
+    for rank, trial in enumerate(trials_sorted, start=1):
+
+        print("=" * 70)
+        print(f"Rank {rank}")
+        print(f"Trial Number: {trial.number}")
+        print("-" * 70)
+        print(f"F1 Score : {trial.value:.6f}")
+        print("-" * 70)
+
+        params = trial.params
+
+        if not params:
+            print("No hyperparameters recorded.")
+            continue
+
+        # Sort parameters alphabetically for easier comparison
+        sorted_items = sorted(params.items(), key=lambda x: x[0])
+
+        # Compute column width dynamically
+        max_name_len = max(len(name) for name, _ in sorted_items)
+
+        # Header
+        print(f"{'Parameter'.ljust(max_name_len)} | Value")
+        print(f"{'-' * max_name_len}-+{'-' * 20}")
+
+        # Rows
+        for name, value in sorted_items:
+            print(f"{name.ljust(max_name_len)} | {value}")
+
+        print("\n")
+
 
 # =====================================================
 # Main Entry Point
@@ -514,6 +568,18 @@ def main():
         help="Print hyperparameter tables for Pareto trials.",
     )
 
+    parser.add_argument(
+        "--multi-objective",
+        action="store_true",
+        help="Multi-objective study.",
+    )
+
+    parser.add_argument(
+        "--single-objective",
+        action="store_true",
+        help="Single-objective study.",
+    )
+
     parser.add_argument("--log-params", action="store_true")
     parser.add_argument("--log-maccs", action="store_true")
 
@@ -535,7 +601,10 @@ def main():
     # -------------------------------------------------
 
     if args.print_table:
-        print_pareto_hyperparameters(study)
+        if args.multi_objective:
+            print_pareto_hyperparameters(study)
+        elif args.single_objective:
+            print_top_trials(study)
 
     if args.plot:
         plot_2d_pareto_plotly(

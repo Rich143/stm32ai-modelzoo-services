@@ -43,7 +43,7 @@ from models.ddcnn_tuner_optuna_2 import get_ddcnn_model
 from models.keras_tuner_model_utils import get_model_maccs, get_model_num_params
 from experiments.tuner_utils import plot_3d_pareto_plotly
 from preprocessing.data_load_helpers import global_activity_name_to_id
-from training.train_utils import get_early_stopping_cb, check_tuner_cfg
+from training.train_utils import get_early_stopping_cb, check_tuner_cfg, get_split_datasets, segment_datasets
 
 
 from math import ceil
@@ -465,11 +465,7 @@ def train_keras_tuner(cfg: DictConfig,
     return best_model_path
 
 
-def train(cfg: DictConfig = None, train_ds: tf.data.Dataset = None,
-          valid_ds: tf.data.Dataset = None,
-          test_ds: Optional[tf.data.Dataset] = None,
-          callbacks: Optional[List[tf.keras.callbacks.Callback]] = None,
-          run_name: str = "base") -> str:
+def train(cfg: DictConfig, run_name: str = "base") -> str:
     """
     Trains the model using the provided configuration and datasets.
 
@@ -485,7 +481,6 @@ def train(cfg: DictConfig = None, train_ds: tf.data.Dataset = None,
         Path to the best model obtained
     """
 
-    #output_dir = cfg.output_dir
     output_dir = HydraConfig.get().runtime.output_dir
 
     # Make a separate directory for each run
@@ -493,56 +488,20 @@ def train(cfg: DictConfig = None, train_ds: tf.data.Dataset = None,
 
     os.makedirs(output_dir, exist_ok=True)
 
+    train_ds, valid_ds, test_ds, class_weights = get_split_datasets(cfg=cfg)
+    train_ds, valid_ds, test_ds, callbacks = segment_datasets(cfg=cfg, train_ds=train_ds, valid_ds=valid_ds, test_ds=test_ds)
+
     saved_models_dir = cfg.general.saved_models_dir
     class_names = cfg.dataset.class_names
     num_classes = len(class_names)
 
-
     model, _ = load_model_to_train(cfg.training, model_path=cfg.general.model_path,
                                    num_classes=num_classes)
-
-    # Info messages about the model that was loaded
-    if cfg.training.model:
-        cfm = cfg.training.model
-        print(f"[INFO] : Using `{cfm.name}` model")
-        log_to_file(cfg.output_dir, (f"Model name : {cfm.name}"))
-        if cfm.pretrained_weights:
-            print(f"[INFO] : Initialized model with '{cfm.pretrained_weights}' pretrained weights")
-            log_to_file(cfg.output_dir,(f"Pretrained weights : {cfm.pretrained_weights}"))
-        elif cfm.pretrained_model_path:
-            print(f"[INFO] : Initialized model with weights from model file {cfm.pretrained_model_path}")
-            log_to_file(cfg.output_dir, (f"Weights from model file : {cfm.pretrained_model_path}"))
-        else:
-            print("[INFO] : No pretrained weights were loaded, training from randomly initialized weights.")
-    elif cfg.training.resume_training_from:
-        print(f"[INFO] : Resuming training from model file {cfg.training.resume_training_from}")
-        log_to_file(cfg.output_dir, (f"Model file : {cfg.training.resume_training_from}"))
-    elif cfg.general.model_path:
-        print(f"[INFO] : Loaded model file {cfg.general.model_path}")
-        log_to_file(cfg.output_dir ,(f"Model file : {cfg.general.model_path}"))
-    if cfg.dataset.name:
-        log_to_file(output_dir, f"Dataset : {cfg.dataset.name}")
-
-    if not cfg.training.resume_training_from:
-        # Set frozen layers
-        if not cfg.training.frozen_layers or cfg.training.frozen_layers == "None":
-            model.trainable = True
-        else:
-            set_frozen_layers(model, frozen_layers=cfg.training.frozen_layers)
-        # Set dropout rate
-        set_dropout_rate(model, dropout_rate=cfg.training.dropout)
-
     model.summary()
 
     if cfg.training.steps_per_execution is None:
         cfg.training.steps_per_execution = 1
     print(f"[INFO] : steps_per_execution = {cfg.training.steps_per_execution}")
-
-    # Compile the augmented model
-    model.compile(loss=get_loss(num_classes=num_classes),
-                  metrics=['accuracy'],
-                  optimizer=get_optimizer(cfg=cfg.training.optimizer),
-                  steps_per_execution=cfg.training.steps_per_execution)
 
     user_config_callbacks = get_callbacks(callbacks_dict=cfg.training.callbacks,
                               output_dir=output_dir,
@@ -555,7 +514,7 @@ def train(cfg: DictConfig = None, train_ds: tf.data.Dataset = None,
     callbacks += user_config_callbacks
     callbacks.append(PrintLREpoch())
 
-    callbacks.append(get_tensorboard_profile_cb())
+    # callbacks.append(get_tensorboard_profile_cb())
 
     early_stop_cb = next((cb for cb in callbacks if isinstance(cb, EarlyStopping)), None)
 
@@ -588,6 +547,7 @@ def train(cfg: DictConfig = None, train_ds: tf.data.Dataset = None,
                         epochs=cfg.training.epochs,
                         steps_per_epoch=cfg.training.steps_per_epoch,
                         callbacks=callbacks,
+                        class_weight=class_weights,
                         verbose=1)
     end_time = timer()
     #save the last epoch history in the log file
