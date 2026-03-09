@@ -69,12 +69,13 @@ def check_training_determinism(model: tf.keras.Model, sample_ds: tf.data.Dataset
     valid_training = True
     x_sample, y_sample = next(iter(sample_ds))
 
+    # try:
+        # with tf.GradientTape() as g:
+            # y = model(x_sample, training=True)
+            # loss = model.loss(y_sample, y)
+        # _ = g.gradient(loss, model.trainable_variables)
     try:
-        with tf.GradientTape() as g:
-            y = model(x_sample, training=True)
-            loss = model.loss(y_sample, y)
-        _ = g.gradient(loss, model.trainable_variables)
-        
+        model.train_on_batch(x_sample, y_sample)
     except Exception as error:
         print(f"[WARN] {error}")
         valid_training = False
