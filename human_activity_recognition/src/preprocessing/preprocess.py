@@ -8,7 +8,7 @@
 #  *--------------------------------------------------------------------------------------------*/
 
 from omegaconf import DictConfig
-from typing import Tuple, TypeAlias, Any, List, Optional
+from typing import Tuple, TypeAlias, Any, List, Optional, Dict
 
 from preprocessing.data_loader import load_datasets, preprocess_dataset
 from preprocessing.data_load_helpers import global_activity_id_to_name
@@ -24,6 +24,9 @@ import statistics
 from tensorflow.keras.utils import to_categorical
 import mlflow
 from math import ceil
+from dataclasses import asdict
+import os
+from hydra.core.hydra_config import HydraConfig
 
 CallbackList: TypeAlias = List[tf.keras.callbacks.Callback]
 ds: TypeAlias = tf.data.Dataset[Any]
@@ -259,6 +262,61 @@ def build_train_ds(train_x: np.ndarray,
 
     return train_ds, callbacks
 
+def log_dict_as_params(mlflow_dict, dict_name: str):
+    for k, v in asdict(mlflow_dict).items():
+        mlflow.log_param(f"{dict_name}_{k}", v)
+
+def log_augmentation_config_mlflow(augmentation_config: AugmentationConfig):
+    if augmentation_config.noise_cfg is None:
+        mlflow.log_param("gaussian_noise", False)
+    else:
+        mlflow.log_param("gaussian_noise", True)
+        log_dict_as_params(augmentation_config.noise_cfg, "gaussian_noise")
+
+    if augmentation_config.amplitude_scale_cfg is None:
+        mlflow.log_param("amplitude_scaling", False)
+    else:
+        mlflow.log_param("amplitude_scaling", True)
+        log_dict_as_params(augmentation_config.amplitude_scale_cfg, "amplitude_scaling")
+
+    if augmentation_config.rotation_cfg is None:
+        mlflow.log_param("rotation_augmentation", False)
+    else:
+        mlflow.log_param("rotation_augmentation", True)
+        log_dict_as_params(augmentation_config.rotation_cfg, "rotation_augmentation")
+
+def save_data_to_file(train_x, train_y, valid_x, valid_y, test_x, test_y):
+    output_dir = HydraConfig.get().runtime.output_dir
+    data_dir = os.path.join(output_dir, "data")
+
+    if not os.path.exists(data_dir):
+        print(f"Creating directory {data_dir}")
+        os.makedirs(data_dir)
+
+    filepath = os.path.join(data_dir, "train_dataset.npz")
+    print(f"Saving train dataset to {filepath}")
+    np.savez_compressed(
+        filepath,
+        X=train_x,
+        Y=train_y
+    )
+
+    filepath = os.path.join(data_dir, "val_dataset.npz")
+    print(f"Saving val dataset to {filepath}")
+    np.savez_compressed(
+        filepath,
+        X=valid_x,
+        Y=valid_y
+    )
+
+    filepath = os.path.join(data_dir, "test_dataset.npz")
+    print(f"Saving test dataset to {filepath}")
+    np.savez_compressed(
+        filepath,
+        X=test_x,
+        Y=test_y
+    )
+
 def segment_presplit_dataset(train_ds: pd.DataFrame,
                              val_ds: pd.DataFrame,
                              test_ds: pd.DataFrame,
@@ -289,6 +347,10 @@ def segment_presplit_dataset(train_ds: pd.DataFrame,
     valid_x, valid_y = val_segments, val_labels
     test_x, test_y = test_segments, test_labels
 
+    save_data_to_file(train_x, train_y,
+                      valid_x, valid_y,
+                      test_x, test_y)
+
     print("Dataset stats:")
     train_size = train_x.shape[0]
     valid_size = valid_x.shape[0]
@@ -303,6 +365,10 @@ def segment_presplit_dataset(train_ds: pd.DataFrame,
         batch_size=32
 
     mlflow.log_param("batch_size_actual", batch_size)
+    log_augmentation_config_mlflow(augmentation_config)
+    mlflow.log_param("input_shape", input_shape)
+    mlflow.log_param("input_length", input_shape[0])
+
     train_ds, callbacks = build_train_ds(
         train_x=train_x,
         train_y=train_y,

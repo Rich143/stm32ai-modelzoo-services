@@ -44,6 +44,8 @@ from models.keras_tuner_model_utils import get_model_maccs, get_model_num_params
 from experiments.tuner_utils import plot_3d_pareto_plotly
 from preprocessing.data_load_helpers import global_activity_name_to_id
 from training.train_utils import get_early_stopping_cb, check_tuner_cfg, get_split_datasets, segment_datasets
+from utils.debug_model_dataset import (get_sample_losses, load_dataset,
+                                       get_embedding_umap, load_model)
 
 
 from math import ceil
@@ -465,6 +467,53 @@ def train_keras_tuner(cfg: DictConfig,
 
     return best_model_path
 
+# def save_loss_info(best_model_path: str) -> None:
+    # print("[INFO] Saving loss info to disk")
+    # output_dir = HydraConfig.get().runtime.output_dir
+    # data_dir = os.path.join(output_dir, "data")
+
+    # filepath_train = os.path.join(data_dir, "train_dataset.npz")
+    # filepath_val = os.path.join(data_dir, "val_dataset.npz")
+    # filepath_test = os.path.join(data_dir, "test_dataset.npz")
+
+    # model = tf.keras.models.load_model(best_model_path)
+
+    # X_train, Y_train = load_dataset(filepath_train)
+    # X_val, Y_val = load_dataset(filepath_val)
+    # X_test, Y_test = load_dataset(filepath_test)
+
+    # sample_losses_train = get_sample_losses(model, X_train, Y_train)
+    # sample_losses_val = get_sample_losses(model, X_val, Y_val)
+    # sample_losses_test = get_sample_losses(model, X_test, Y_test)
+
+    # sample_losses_train.to_pickle(os.path.join(data_dir, "sample_losses_train.pkl"))
+    # sample_losses_val.to_pickle(os.path.join(data_dir, "sample_losses_val.pkl"))
+    # sample_losses_test.to_pickle(os.path.join(data_dir, "sample_losses_test.pkl"))
+
+def save_loss_umap_info(best_model_path: str) -> None:
+    print("[INFO] Saving loss info to disk")
+    output_dir = HydraConfig.get().runtime.output_dir
+    data_dir = os.path.join(output_dir, "data")
+
+    filepath_train = os.path.join(data_dir, "train_dataset.npz")
+    filepath_val = os.path.join(data_dir, "val_dataset.npz")
+    filepath_test = os.path.join(data_dir, "test_dataset.npz")
+
+    model = tf.keras.models.load_model(best_model_path)
+
+    X_train, Y_train = load_dataset(filepath_train)
+    X_val, Y_val = load_dataset(filepath_val)
+    X_test, Y_test = load_dataset(filepath_test)
+
+    filepath_umap_train = os.path.join(data_dir, "embedding_umap_train.pkl")
+    get_embedding_umap(model, X_train, Y_train,
+                                             output_file=filepath_umap_train)
+
+    filepath_umap_val = os.path.join(data_dir, "embedding_umap_train.pkl")
+    get_embedding_umap(model, X_val, Y_val, output_file=filepath_umap_val)
+
+    filepath_umap_test = os.path.join(data_dir, "embedding_umap_train.pkl")
+    get_embedding_umap(model, X_test, Y_test, output_file=filepath_umap_test)
 
 def train(cfg: DictConfig, run_name: str = "base") -> str:
     """
@@ -538,9 +587,7 @@ def train(cfg: DictConfig, run_name: str = "base") -> str:
     if os.path.isfile(runtime_csv_path):
         os.remove(runtime_csv_path)
 
-    tf.config.run_functions_eagerly(False)
-
-    print("Config eager is : ", tf.config.functions_run_eagerly())
+    # tf.config.run_functions_eagerly(False)
 
     # Train the model
     print("Starting training...")
@@ -554,9 +601,10 @@ def train(cfg: DictConfig, run_name: str = "base") -> str:
                         class_weight=class_weights,
                         verbose=1)
     end_time = timer()
+
     #save the last epoch history in the log file
     last_epoch=log_last_epoch_history(cfg, output_dir)
-    fit_run_time = int(end_time - start_time)
+    fit_run_time =int(end_time - start_time)
     average_time_per_epoch = round(fit_run_time / (int(last_epoch) + 1),2)
     print("Training runtime: " + str(timedelta(seconds=fit_run_time)))
     log_to_file(cfg.output_dir, (f"Training runtime : {fit_run_time} s\n" + f"Average time per epoch : {average_time_per_epoch} s"))
@@ -580,6 +628,28 @@ def train(cfg: DictConfig, run_name: str = "base") -> str:
                                    saved_models_dir,
                                    "best_model.keras")
     best_model = tf.keras.models.load_model(best_model_path)
+
+    save_loss_umap_info(best_model_path)
+    # print("[INFO] Test prediction start")
+    # # predictions = model.predict(valid_ds, batch_size=cfg.training.batch_size)
+
+    # output_dir = HydraConfig.get().runtime.output_dir
+    # data_dir = os.path.join(output_dir, "data")
+    # filepath_train = os.path.join(data_dir, "train_dataset.npz")
+    # filepath_val = os.path.join(data_dir, "val_dataset.npz")
+    # filepath_test = os.path.join(data_dir, "test_dataset.npz")
+
+    # X_train, Y_train = load_dataset(filepath_train)
+    # X_val, Y_val = load_dataset(filepath_val)
+    # X_test, Y_test = load_dataset(filepath_test)
+
+    # high_loss_samples, df = get_high_loss_samples_numpy(best_model, X, Y)
+    # print("[INFO] Saving loss info to disk")
+    # df.to_pickle(os.path.join(data_dir, "sample_losses.pkl"))
+    # print(f"Using dataset {filepath}, with model {best_model_path}")
+    # print("High loss samples:", high_loss_samples)
+    # print("[INFO] Test prediction end")
+
     # Save a copy of the best model if requested
     if cfg.training.trained_model_path:
         best_model.save(cfg.training.trained_model_path)

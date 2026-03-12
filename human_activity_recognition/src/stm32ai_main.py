@@ -212,7 +212,11 @@ def main(cfg: DictConfig) -> None:
             print('[INFO] : Hyperparameter tuner complete.')
         elif mode == 'training':
             print("[INFO] Starting training mode")
+
             mlflow_init(cfg.experiment, cfg.mlflow.uri)
+            mlflow.set_tag("operation_mode", mode)
+            output_dir = HydraConfig.get().runtime.output_dir
+            mlflow.set_tag("output_dir", output_dir)
 
             # logging the operation_mode in the output_dir/stm32ai_main.log file
             log_to_file(cfg.output_dir, f'operation_mode: {mode}')
