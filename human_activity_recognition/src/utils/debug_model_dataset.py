@@ -2,6 +2,8 @@ import argparse
 import numpy as np
 import pandas as pd
 import tensorflow as tf
+import umap
+import pickle
 
 def get_embedding_umap(
     model,
@@ -40,7 +42,8 @@ def get_embedding_umap(
         n_neighbors=30,
         min_dist=0.1,
         metric="euclidean",
-        random_state=42
+        random_state=42,
+        verbose=True
     )
 
     embedding_2d = reducer.fit_transform(embeddings)
@@ -95,6 +98,16 @@ def get_sample_losses(model, X, Y, batch_size=256):
 
     return df_sorted
 
+def load_pickle_data(path):
+    with open(path, "rb") as f:
+        data = pickle.load(f)
+
+    return data["df"]
+
+
+def get_n_highest_loss_samples(df_sorted, top_k=50):
+    return df_sorted.head(top_k)
+
 # def get_high_loss_samples_numpy(model, X, Y, top_k=50, batch_size=256):
 
     # loss_fn = tf.keras.losses.CategoricalCrossentropy(
@@ -139,22 +152,93 @@ def load_model(model_path):
 
     return model
 
+import numpy as np
+import matplotlib.pyplot as plt
+
+
+def plot_accel_samples(
+    df,
+    X,
+    n=5,
+    mode="top_loss",   # "top_loss", "random", "index"
+    indices=None,
+    figsize=(12, 3)
+):
+    """
+    Plot accelerometer samples from dataset.
+
+    Args:
+        df: DataFrame with sample_id, true_label, pred_label, confidence, loss
+        X: numpy array (N, 48, 3, 1)
+        n: number of samples to plot
+        mode:
+            - "top_loss": highest loss samples
+            - "random": random samples
+            - "index": use provided indices
+        indices: list of indices (used if mode="index")
+    """
+
+    if mode == "top_loss":
+        selected = df.sort_values("loss", ascending=False).head(n)
+
+    elif mode == "random":
+        selected = df.sample(n)
+
+    elif mode == "index":
+        assert indices is not None, "Provide indices for mode='index'"
+        selected = df.iloc[indices]
+
+    else:
+        raise ValueError("Invalid mode")
+
+    selected = selected.reset_index(drop=True)
+
+    fig, axes = plt.subplots(n, 1, figsize=(figsize[0], figsize[1] * n))
+
+    if n == 1:
+        axes = [axes]
+
+    for i, row in selected.iterrows():
+
+        sample_id = int(row["sample_id"])
+        sample = X[sample_id].squeeze()  # (48,3)
+
+        ax = axes[i]
+
+        ax.plot(sample[:,0], label="x")
+        ax.plot(sample[:,1], label="y")
+        ax.plot(sample[:,2], label="z")
+
+        title = (
+            f"ID: {sample_id} | "
+            f"true: {row['true_label']} | "
+            f"pred: {row['pred_label']} | "
+            f"conf: {row['confidence']:.2f} | "
+            f"loss: {row['loss']:.3f}"
+        )
+
+        ax.set_title(title)
+        ax.legend(loc="upper right")
+
+    plt.tight_layout()
+    plt.show()
+
 def main():
 
     parser = argparse.ArgumentParser(
-        description="Find high-loss samples for a trained Keras model"
+        description="Find high-loss samples"
     )
 
     parser.add_argument(
-        "--model",
+        "--pickle-dataframe",
         required=True,
-        help="Path to .keras model file"
+        help="Path to pickle dataframe file"
     )
 
     parser.add_argument(
         "--dataset",
         required=True,
-        help="Path to dataset .npz file containing X and Y arrays"
+        help="Path to dataset file"
     )
 
     parser.add_argument(
@@ -172,22 +256,23 @@ def main():
 
     args = parser.parse_args()
 
-    print(f"Loading model from: {args.model}")
-    model = load_model(args.model)
+    df = load_pickle_data(args.pickle_dataframe)
 
-    print(f"Loading dataset from: {args.dataset}")
-    X, Y = load_dataset(args.dataset)
+    df_sorted = df.sort_values("loss", ascending=False)
 
-    top_samples, full_df = get_high_loss_samples_numpy(
-        model,
-        X,
-        Y,
-        top_k=args.top_k,
-        batch_size=args.batch_size
+    dataset = load_dataset(args.dataset)
+    X = dataset[0]
+    Y = dataset[1]
+
+    top_loss_samples = get_n_highest_loss_samples(
+        df_sorted,
+        top_k=args.top_k
     )
 
     print("\nTop high-loss samples:\n")
-    print(top_samples.to_string(index=False))
+    print(top_loss_samples.to_string(index=False))
+
+    plot_accel_samples(df, X, n=5, mode="top_loss")
 
 
 if __name__ == "__main__":

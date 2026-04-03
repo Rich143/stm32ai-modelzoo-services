@@ -509,10 +509,10 @@ def save_loss_umap_info(best_model_path: str) -> None:
     get_embedding_umap(model, X_train, Y_train,
                                              output_file=filepath_umap_train)
 
-    filepath_umap_val = os.path.join(data_dir, "embedding_umap_train.pkl")
+    filepath_umap_val = os.path.join(data_dir, "embedding_umap_val.pkl")
     get_embedding_umap(model, X_val, Y_val, output_file=filepath_umap_val)
 
-    filepath_umap_test = os.path.join(data_dir, "embedding_umap_train.pkl")
+    filepath_umap_test = os.path.join(data_dir, "embedding_umap_val.pkl")
     get_embedding_umap(model, X_test, Y_test, output_file=filepath_umap_test)
 
 def train(cfg: DictConfig, run_name: str = "base") -> str:
