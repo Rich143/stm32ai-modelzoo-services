@@ -37,14 +37,22 @@ def load_data(path):
 
     return data["df"]
 
-def plot_umap_by_true_label(df):
+def plot_umap_by_true_label(df, highlight_ids=None, title=None):
+    opactity = 0.7
+
+    if title is None:
+        title = "UMAP colored by TRUE label"
+
+    if highlight_ids:
+        opactity = 0.1
+
     fig = px.scatter(
         df,
         x="umap_x",
         y="umap_y",
         color="true_label_name",
-        title="UMAP colored by TRUE label",
-        opacity=0.7,
+        title=title,
+        opacity=opactity,
         color_discrete_sequence=px.colors.qualitative.Set1,  # distinct colors
         hover_data={
             "sample_id": True,
@@ -58,6 +66,30 @@ def plot_umap_by_true_label(df):
 
     fig.update_traces(marker=dict(size=5))
 
+    # ----------------------------
+    # Highlight selected samples
+    # ----------------------------
+    if highlight_ids and len(highlight_ids) > 0:
+        df_highlight = df[df["sample_id"].isin(highlight_ids)]
+
+        fig.add_scatter(
+            x=df_highlight["umap_x"],
+            y=df_highlight["umap_y"],
+            mode="markers",
+            marker=dict(
+                size=20,
+                color="black",   # highlight color
+                symbol="circle-open",
+                line=dict(width=2)
+            ),
+            name="Selected",
+            showlegend=True,
+            customdata=df_highlight[["sample_id"]].values,
+            hovertemplate=(
+                "sample_id=%{customdata[0]}<extra>Selected</extra>"
+            )
+        )
+
     fig.update_layout(
         legend=dict(
             x=1.02,
@@ -67,7 +99,7 @@ def plot_umap_by_true_label(df):
         autosize=True
     )
 
-    event = st.plotly_chart(fig, use_container_width=True, on_select="rerun")
+    event = st.plotly_chart(fig, use_container_width=True, on_select="rerun", key=title)
 
     # Extract sample_id only
     if event:
@@ -172,30 +204,6 @@ def plot_sample_time_fft_stft(sample, ranges, fs=50, nperseg=16, pad_factor=4):
 
     return fig_time, fig_fft, fig_stft
 
-
-st.title("UMAP Dataset Explorer")
-
-# ----------------------------
-# Sidebar
-# ----------------------------
-dataframe_file = st.sidebar.file_uploader(
-    "Choose a dataframe file (.pkl)",
-    type=["pkl"]
-)
-
-if dataframe_file is None:
-    st.warning("Please upload a dataframe file to continue.")
-    st.stop()  # Stop the app until a file is uploaded
-
-dataset_file = st.sidebar.file_uploader(
-    "Choose a dataset file (.npz)",
-    type=["npz"]
-)
-
-if dataset_file is None:
-    st.warning("Please upload a dataset file to continue.")
-    st.stop()  # Stop the app until a file is uploaded
-
 # ----------------------------
 # Load data (with caching)
 # ----------------------------
@@ -227,6 +235,39 @@ def load_dataset_cached(dataset_path):
 
     return X, Y
 
+
+
+
+###
+# App Main
+###
+
+st.title("UMAP Dataset Explorer")
+
+if st.button("Clear selected samples"):
+    st.session_state.plot_selected_samples = []
+
+# ----------------------------
+# Sidebar
+# ----------------------------
+dataframe_file = st.sidebar.file_uploader(
+    "Choose a dataframe file (.pkl)",
+    type=["pkl"]
+)
+
+if dataframe_file is None:
+    st.warning("Please upload a dataframe file to continue.")
+    st.stop()  # Stop the app until a file is uploaded
+
+dataset_file = st.sidebar.file_uploader(
+    "Choose a dataset file (.npz)",
+    type=["npz"]
+)
+
+if dataset_file is None:
+    st.warning("Please upload a dataset file to continue.")
+    st.stop()  # Stop the app until a file is uploaded
+
 df = load_dataframe_cached(dataframe_file)
 
 dataset = load_dataset_cached(dataset_file)
@@ -238,28 +279,41 @@ Y = dataset[1]
 # # ----------------------------
 # st.write(f"**Samples:** {len(df)}")
 
-# st.subheader("Top loss samples")
-# top_loss_df = df.sort_values("loss", ascending=False).head(20)
-# st.dataframe(top_loss_df)
+st.subheader("Top loss samples")
+top_loss_df = df.sort_values("loss", ascending=False).head(20)
+top_loss_df = top_loss_df[["sample_id", "true_label_name", "pred_label_name", "confidence", "loss", "umap_x", "umap_y", "preds"]]
+event = st.dataframe(top_loss_df, on_select="rerun")
+df_samples = []
+
+if event:
+    for row in event.selection["rows"]:
+        sample_id = top_loss_df.iloc[row]["sample_id"]
+        df_samples.append(sample_id)
+
+st.write(f"DF Samples {df_samples}")
 
 # ----------------------------
 # Plot
 # ----------------------------
-if "selected_samples" not in st.session_state:
-    st.session_state.selected_samples = []
+if "plot_selected_samples" not in st.session_state:
+    st.session_state.plot_selected_samples = []
 
-if st.button("Clear selected samples"):
-    st.session_state.selected_samples = []
-
-sample_ids = plot_umap_by_true_label(df)
+st.subheader("Selection Plot")
+title = "UMAP colored by TRUE label"
+sample_ids = plot_umap_by_true_label(df, title=title)
 
 if sample_ids:
     sample_id = sample_ids[0]  # Only handle first click
     st.write(f"Clicked sample_id: {sample_id}")
-    st.session_state.selected_samples.append(sample_id)
+    st.session_state.plot_selected_samples.append(sample_id)
 else:
     sample_id = 0
     st.write("No sample selected")
+
+st.subheader("Highlight Plot")
+highlight_ids = st.session_state.plot_selected_samples + df_samples
+title = "UMAP colored by TRUE label (highlighting selected samples)"
+plot_umap_by_true_label(df, highlight_ids=highlight_ids, title=title)
 
 
 def display_sample_plot(sample_id, sample_ranges):
@@ -272,27 +326,28 @@ def display_sample_plot(sample_id, sample_ranges):
         sample, ranges=sample_ranges
     )
 
-    st.plotly_chart(fig_time, use_container_width=True)
-    st.plotly_chart(fig_fft, use_container_width=True)
-    st.plotly_chart(fig_stft, use_container_width=True)
+    st.plotly_chart(fig_time, use_container_width=True, key=f"sample_time_{sample_id}")
+    st.plotly_chart(fig_fft, use_container_width=True, key=f"sample_fft_{sample_id}")
+    st.plotly_chart(fig_stft, use_container_width=True, key=f"sample_stft_{sample_id}")
 
 
 # ----------------- Selected samples -----------------
 st.subheader("Selected Samples")
 left_col, middle_col, right_col = st.columns(3)
 
-sample_ranges = compute_global_ranges(st.session_state.selected_samples, X)
-sample_ranges
+all_selected_samples = df_samples + st.session_state.plot_selected_samples
+
+sample_ranges = compute_global_ranges(all_selected_samples, X)
 
 with left_col:
-    if len(st.session_state.selected_samples) > 0:
-        display_sample_plot(st.session_state.selected_samples[0], sample_ranges)
+    if len(all_selected_samples) > 0:
+        display_sample_plot(all_selected_samples[0], sample_ranges)
 
 with middle_col:
-    if len(st.session_state.selected_samples) > 1:
-        display_sample_plot(st.session_state.selected_samples[1], sample_ranges)
+    if len(all_selected_samples) > 1:
+        display_sample_plot(all_selected_samples[1], sample_ranges)
 
 with right_col:
-    if len(st.session_state.selected_samples) > 2:
-        for sample_id in st.session_state.selected_samples[2:]:
+    if len(all_selected_samples) > 2:
+        for sample_id in all_selected_samples[2:]:
             display_sample_plot(sample_id, sample_ranges)
