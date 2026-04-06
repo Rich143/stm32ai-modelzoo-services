@@ -71,6 +71,7 @@ def plot_umap_by_true_label(df, highlight_ids=None, title=None):
     # ----------------------------
     if highlight_ids and len(highlight_ids) > 0:
         df_highlight = df[df["sample_id"].isin(highlight_ids)]
+        df_highlight["selected"] = True
 
         fig.add_scatter(
             x=df_highlight["umap_x"],
@@ -84,10 +85,26 @@ def plot_umap_by_true_label(df, highlight_ids=None, title=None):
             ),
             name="Selected",
             showlegend=True,
-            customdata=df_highlight[["sample_id"]].values,
+            customdata=df_highlight[[
+                "sample_id",
+                "true_label_name",
+                "pred_label_name",
+                "confidence",
+                "loss",
+                "umap_x",
+                "umap_y",
+                "selected",
+            ]].values,
             hovertemplate=(
-                "sample_id=%{customdata[0]}<extra>Selected</extra>"
-            )
+                "sample_id: %{customdata[0]}<br>"
+                "true_label: %{customdata[1]}<br>"
+                "pred_label: %{customdata[2]}<br>"
+                "confidence: %{customdata[3]:.3f}<br>"
+                "loss: %{customdata[4]:.3f}<br>"
+                "umap: %{customdata[5]:.3f}, %{customdata[6]:.3f}<br>"  # umap_x, umap_y
+                "selected: %{customdata[7]}<br>"
+                "<extra></extra>"
+            ),
         )
 
     fig.update_layout(
